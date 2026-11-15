@@ -252,6 +252,12 @@ private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color 
             "back" -> { line(.78f,.5f,.22f,.5f); line(.22f,.5f,.48f,.24f); line(.22f,.5f,.48f,.76f) }
             "home" -> { val p=Path().apply { moveTo(w*.16f,h*.46f); lineTo(w*.5f,h*.16f); lineTo(w*.84f,h*.46f); lineTo(w*.84f,h*.86f); lineTo(w*.16f,h*.86f); close() }; drawPath(p,tint,style=stroke) }
             "play" -> { val p=Path().apply { moveTo(w*.25f,h*.12f); lineTo(w*.78f,h*.5f); lineTo(w*.25f,h*.88f); close() }; drawPath(p,tint) }
+            "playpause" -> {
+                val p=Path().apply { moveTo(w*.12f,h*.16f); lineTo(w*.52f,h*.5f); lineTo(w*.12f,h*.84f); close() }
+                drawPath(p,tint)
+                drawLine(tint,Offset(w*.70f,h*.18f),Offset(w*.70f,h*.82f),sw*1.5f)
+                drawLine(tint,Offset(w*.88f,h*.18f),Offset(w*.88f,h*.82f),sw*1.5f)
+            }
             "rewind", "forward" -> {
                 val start=if(kind=="rewind") 35f else 215f
                 drawArc(tint,start,290f,false,Offset(w*.12f,h*.12f),Size(w*.76f,h*.76f),style=stroke)
@@ -267,11 +273,34 @@ private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color 
 }
 
 @Composable
-private fun AppTile(name: String, tint: Color, modifier: Modifier = Modifier) {
-    Surface(color = panelLight, shape = RoundedCornerShape(20.dp), modifier = modifier.height(72.dp)) {
+private fun AppTile(brand: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = Color(0xFF202328), shape = RoundedCornerShape(22.dp),
+        modifier = modifier.height(72.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(22.dp))
+    ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(name, color = tint, fontWeight = FontWeight.ExtraBold,
-                style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+            when (brand) {
+                "prime" -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text("prime", color = Color(0xFF19A8E0), fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                    Canvas(Modifier.width(52.dp).height(10.dp)) {
+                        val smile = Path().apply {
+                            moveTo(size.width * .08f, size.height * .18f)
+                            cubicTo(size.width * .35f, size.height * 1.15f, size.width * .72f, size.height * .95f, size.width * .94f, size.height * .18f)
+                        }
+                        drawPath(smile, Color(0xFF19A8E0), style = Stroke(width = 2.dp.toPx()))
+                    }
+                }
+                "disney" -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Canvas(Modifier.width(70.dp).height(8.dp)) {
+                        drawArc(white, 190f, 160f, false, Offset(0f, -size.height * 1.25f),
+                            Size(size.width, size.height * 2.5f), style = Stroke(width = 1.6.dp.toPx()))
+                    }
+                    Text("Disney+", color = white, fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = (-.7).sp)
+                }
+                "netflix" -> Text("NETFLIX", color = Color(0xFFE50914), fontSize = 19.sp,
+                    fontWeight = FontWeight.Black, letterSpacing = (-1.1).sp)
+            }
         }
     }
 }
@@ -290,11 +319,14 @@ private fun TallControl(top: String, label: String, bottom: String, onPlus: () -
 
 @Composable
 private fun RemoteTile(symbol: String, caption: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(color = panelLight, shape = RoundedCornerShape(20.dp),
-        modifier = modifier.height(88.dp).clickable { onClick() }) {
+    Surface(
+        color = Color(0xFF202328), shape = RoundedCornerShape(21.dp),
+        modifier = modifier.height(76.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(21.dp))
+            .clickable { onClick() }
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text(symbol, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            if (caption.isNotEmpty()) Text(caption, color = muted, style = MaterialTheme.typography.labelSmall)
+            RemoteIcon(symbol, Modifier.size(25.dp), white)
+            if (caption.isNotEmpty()) Text(caption, color = muted, fontSize = 11.sp)
         }
     }
 }
