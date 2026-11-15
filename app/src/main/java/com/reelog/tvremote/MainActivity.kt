@@ -289,8 +289,25 @@ private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color 
             }
             "remote" -> { drawRoundRect(tint,Offset(w*.25f,h*.08f),Size(w*.5f,h*.84f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw*2),style=stroke); drawCircle(tint,w*.045f,Offset(w*.5f,h*.30f)) }
             "apps" -> { for (x in 0..1) for(y in 0..1) drawRoundRect(tint,Offset(w*(.12f+x*.42f),h*(.12f+y*.42f)),Size(w*.32f,h*.32f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw),style=stroke) }
-            "cast" -> { drawArc(tint,180f,90f,false,Offset(w*.10f,h*.10f),Size(w*.80f,h*.80f),style=stroke); drawArc(tint,180f,90f,false,Offset(w*.10f,h*.42f),Size(w*.48f,h*.48f),style=stroke); drawCircle(tint,w*.07f,Offset(w*.18f,h*.82f)) }
-            "settings" -> { drawCircle(tint,w*.30f,Offset(w*.5f,h*.5f),style=stroke); drawCircle(tint,w*.10f,Offset(w*.5f,h*.5f)) }
+            "cast" -> {
+                drawRoundRect(tint, Offset(w*.12f,h*.12f), Size(w*.76f,h*.62f),
+                    cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw), style=stroke)
+                drawArc(tint,180f,90f,false,Offset(w*.12f,h*.60f),Size(w*.30f,h*.30f),style=stroke)
+                drawArc(tint,180f,90f,false,Offset(w*.12f,h*.76f),Size(w*.14f,h*.14f),style=stroke)
+                drawCircle(tint,w*.035f,Offset(w*.15f,h*.87f))
+            }
+            "settings" -> {
+                drawCircle(tint,w*.29f,Offset(w*.5f,h*.5f),style=stroke)
+                drawCircle(tint,w*.11f,Offset(w*.5f,h*.5f))
+                for (i in 0..7) {
+                    val a = i * (Math.PI / 4.0)
+                    val x1 = .5f + kotlin.math.cos(a).toFloat()*.31f
+                    val y1 = .5f + kotlin.math.sin(a).toFloat()*.31f
+                    val x2 = .5f + kotlin.math.cos(a).toFloat()*.46f
+                    val y2 = .5f + kotlin.math.sin(a).toFloat()*.46f
+                    line(x1,y1,x2,y2)
+                }
+            }
         }
     }
 }
