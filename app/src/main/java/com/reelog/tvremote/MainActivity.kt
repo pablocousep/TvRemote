@@ -162,8 +162,8 @@ private fun RemoteHome(
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                TallControl("＋", "VOL", "－", onPlus = { onKey("KEY_VOLUP") },
-                    onMinus = { onKey("KEY_VOLDOWN") }, modifier = Modifier.weight(0.82f))
+                SideControl("volume", Modifier.weight(.90f),
+                    onUp = { onKey("KEY_VOLUP") }, onDown = { onKey("KEY_VOLDOWN") })
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RemoteTile("rewind", "10", Modifier.weight(1f)) { onKey("KEY_REWIND") }
@@ -175,8 +175,8 @@ private fun RemoteHome(
                         RemoteTile("home", "", Modifier.weight(1f)) { onKey("KEY_HOME") }
                     }
                 }
-                TallControl("⌃", "CH", "⌄", onPlus = { onKey("KEY_CHUP") },
-                    onMinus = { onKey("KEY_CHDOWN") }, modifier = Modifier.weight(0.82f))
+                SideControl("channel", Modifier.weight(.90f),
+                    onUp = { onKey("KEY_CHUP") }, onDown = { onKey("KEY_CHDOWN") })
             }
 
             Spacer(Modifier.height(18.dp))
@@ -189,10 +189,10 @@ private fun RemoteHome(
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(24.dp)).padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly) {
-                BottomItem("▣", "Mando", 0, selectedTab) { selectedTab = 0 }
-                BottomItem("▦", "Apps", 1, selectedTab) { selectedTab = 1 }
-                BottomItem("◔", "Transmitir", 2, selectedTab) { selectedTab = 2 }
-                BottomItem("⚙", "Ajustes", 3, selectedTab) { selectedTab = 3 }
+                BottomItem("remote", "Mando", 0, selectedTab) { selectedTab = 0 }
+                BottomItem("apps", "Apps", 1, selectedTab) { selectedTab = 1 }
+                BottomItem("cast", "Transmitir", 2, selectedTab) { selectedTab = 2 }
+                BottomItem("settings", "Ajustes", 3, selectedTab) { selectedTab = 3 }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -306,6 +306,28 @@ private fun AppTile(brand: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun SideControl(kind: String, modifier: Modifier, onUp: () -> Unit, onDown: () -> Unit) {
+    Surface(
+        color = Color(0xFF202328), shape = RoundedCornerShape(25.dp),
+        modifier = modifier.height(176.dp)
+            .border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(25.dp))
+    ) {
+        Column(Modifier.fillMaxSize().padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+            Box(Modifier.fillMaxWidth().weight(1f).clickable { onUp() }, contentAlignment = Alignment.Center) {
+                if (kind == "volume") Text("+", color = white, fontSize = 32.sp, fontWeight = FontWeight.Light)
+                else RemoteIcon("up", Modifier.size(25.dp), white)
+            }
+            RemoteIcon(if (kind == "volume") "volume" else "tv", Modifier.size(24.dp), white)
+            Box(Modifier.fillMaxWidth().weight(1f).clickable { onDown() }, contentAlignment = Alignment.Center) {
+                if (kind == "volume") Text("−", color = white, fontSize = 32.sp, fontWeight = FontWeight.Light)
+                else RemoteIcon("down", Modifier.size(25.dp), white)
+            }
+        }
+    }
+}
+
+@Composable
 private fun TallControl(top: String, label: String, bottom: String, onPlus: () -> Unit,
                         onMinus: () -> Unit, modifier: Modifier = Modifier) {
     Surface(color = panelLight, shape = RoundedCornerShape(22.dp), modifier = modifier.height(170.dp)) {
@@ -333,11 +355,13 @@ private fun RemoteTile(symbol: String, caption: String, modifier: Modifier = Mod
 
 @Composable
 private fun BottomItem(icon: String, label: String, index: Int, selected: Int, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }.padding(horizontal = 5.dp)) {
-        Text(icon, color = if (selected == index) white else muted, style = MaterialTheme.typography.titleLarge)
-        Text(label, color = if (selected == index) white else muted, style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal)
+    Box(
+        Modifier.weight(1f).fillMaxHeight()
+            .background(if (selected == index) Color(0xFF34383E) else Color.Transparent, CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        RemoteIcon(icon, Modifier.size(25.dp), if (selected == index) white else Color(0xFFB9BEC5))
     }
 }
 
