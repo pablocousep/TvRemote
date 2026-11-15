@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.BitmapFactory
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -30,6 +34,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val powerLog = mutableStateListOf<String>()
     val powerBusy = mutableStateOf(false)
     val installedApps = mutableStateListOf<TvApp>()
+    /** Icons sent by the TV itself, by app id. */
+    val appIcons = mutableStateMapOf<String, ImageBitmap>()
     val pinnedApps = mutableStateListOf<TvApp>().apply { addAll(store.pinnedApps) }
     val stConfigured = mutableStateOf(store.smartThingsToken != null)
     val stDevice = mutableStateOf(store.smartThingsDevice)
@@ -42,7 +48,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         app,
         onStatus = { msg -> viewModelScope.launch { setStatus(msg) } },
         onConnectionChanged = { up -> viewModelScope.launch { onConnection(up) } },
-        onInstalledApps = { apps -> viewModelScope.launch { installedApps.clear(); installedApps.addAll(apps) } }
+        onInstalledApps = { apps -> viewModelScope.launch { onApps(apps) } },
+        onAppIcon = { path, png -> viewModelScope.launch { onIcon(path, png) } }
     )
     private val discovery = SamsungTvDiscovery(app)
     private val session = TvSession(
@@ -66,6 +73,19 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         } else if (wasConnected && !userDisconnected) {
             connectionLost.value = true
         }
+    }
+
+    private fun onApps(apps: List<TvApp>) {
+        installedApps.clear()
+        installedApps.addAll(apps)
+        // Ask for the TV's own icon of every app that has one.
+        apps.filter { it.id !in appIcons }.mapNotNull { it.iconPath }.distinct()
+            .take(60).forEach { remote.requestAppIcon(it) }
+    }
+
+    private fun onIcon(path: String, png: ByteArray) {
+        val bmp = BitmapFactory.decodeByteArray(png, 0, png.size) ?: return
+        installedApps.filter { it.iconPath == path }.forEach { appIcons[it.id] = bmp.asImageBitmap() }
     }
 
     fun setStatus(message: String) {

@@ -65,6 +65,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
@@ -148,8 +150,6 @@ private val Bg: Color @Composable @ReadOnlyComposable get() = LocalPalette.curre
 private val Ink: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.ink
 private val InkMuted: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.inkMuted
 private val DotOff: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.dotOff
-private val PrimeBlue = Color(0xFF1FA6E0)
-private val NetflixRed = Color(0xFFE50914)
 private val OnlineGreen = Color(0xFF3DDC84)
 
 /** Converts design pixels of the mock-up into real dp / sp for this screen. */
@@ -161,6 +161,7 @@ private class Ds(val s: Float, private val fontScale: Float) {
 
 private val LocalDs = staticCompositionLocalOf { Ds(0.5f, 1f) }
 private val LocalHaptics = staticCompositionLocalOf { true }
+private val LocalAppIcons = compositionLocalOf { emptyMap<String, ImageBitmap>() }
 
 private fun Modifier.at(d: Ds, x: Number, y: Number, w: Number, h: Number) =
     this.offset(d.dp(x), d.dp(y)).size(d.dp(w), d.dp(h))
@@ -171,7 +172,7 @@ private fun View.tick(enabled: Boolean) {
     if (enabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 }
 
-data class TvApp(val id: String, val name: String)
+data class TvApp(val id: String, val name: String, val iconPath: String? = null)
 
 val TvApps = listOf(
     TvApp("3201910019365", "Prime Video"),
@@ -226,7 +227,8 @@ data class RemoteUiState(
     val pinnedApps: List<TvApp> = TvApps.take(3),
     val stConfigured: Boolean = false,
     val stDevice: StDevice? = null,
-    val stDevices: List<StDevice> = emptyList()
+    val stDevices: List<StDevice> = emptyList(),
+    val appIcons: Map<String, ImageBitmap> = emptyMap()
 )
 
 // ---------------------------------------------------------------------------
@@ -240,7 +242,7 @@ fun RemoteScreen(state: RemoteUiState, actions: RemoteActions) {
         "system" -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
         else -> DarkPalette
     }
-    CompositionLocalProvider(LocalPalette provides palette) {
+    CompositionLocalProvider(LocalPalette provides palette, LocalAppIcons provides state.appIcons) {
         RemoteScreenContent(state, actions)
     }
 }
@@ -413,9 +415,10 @@ private fun MainPage(pinned: List<TvApp>, actions: RemoteActions) {
         val n = pinned.size.coerceIn(1, 3)
         val w = (600f - 24f * (n - 1)) / n
         pinned.take(3).forEachIndexed { i, app ->
-            BrandTile(brandOf(app), Modifier.at(d, 46 + i * (w + 24f), 16, w, 100), "Abrir ${app.name}", app.name) {
-                actions.launchApp(app.id)
-            }
+            GlassButton(
+                Modifier.at(d, 46 + i * (w + 24f), 16, w, 100), RoundedCornerShape(d.dp(24)),
+                description = "Abrir ${app.name}", onClick = { actions.launchApp(app.id) }
+            ) { AppLogo(app, if (n == 3) 1f else 1.15f) }
         }
 
         DPad(Modifier.at(d, 86, 161, 520, 520), actions.key)
@@ -594,64 +597,62 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
     }
 }
 
-@Composable
-private fun BrandTile(brand: String, modifier: Modifier, description: String, name: String, onClick: () -> Unit) {
-    val d = LocalDs.current
-    GlassButton(modifier, RoundedCornerShape(d.dp(24)), description = description, onClick = onClick) { BrandLogo(brand, 1f, name) }
-}
-
-/** Known apps get their logo; anything else is drawn as its name. */
-private fun brandOf(app: TvApp): String {
+/** Which bundled official logo an app uses, or null. */
+private fun brandOf(app: TvApp): String? {
     val n = app.name.lowercase()
     return when {
         app.id == "3201910019365" || "prime" in n -> "prime"
         app.id == "3201901017640" || "disney" in n -> "disney"
         app.id == "3201907018807" || app.id == "11101200001" || "netflix" in n -> "netflix"
         app.id == "111299001912" || n == "youtube" -> "youtube"
-        "spotify" in n -> "spotify"
-        n == "max" || "hbo" in n -> "max"
-        else -> "text"
+        app.id == "3201606009684" || "spotify" in n -> "spotify"
+        app.id == "3201807016597" || "apple tv" in n -> "appletv"
+        app.id == "3202301029760" || n == "max" || "hbo" in n -> "max"
+        else -> null
     }
 }
 
+/**
+ * Official logo of the app: bundled brand artwork for the well-known services (with the
+ * brand's own variant for dark or light backgrounds), otherwise the icon the TV sends for
+ * that app, and only as a last resort its name.
+ */
 @Composable
-private fun BrandLogo(brand: String, k: Float, name: String = "") {
+private fun AppLogo(app: TvApp, k: Float) {
     val d = LocalDs.current
-    when (brand) {
-        "prime" -> Image(
-            painterResource(R.drawable.logo_prime), contentDescription = "Prime Video",
-            modifier = Modifier.size(d.dp(90 * k), d.dp(43 * k)).offset(y = d.dp(3 * k))
+    val dark = pal.dark
+    // (dark-background artwork, light-background artwork, width, height in design px)
+    val art: Triple<Int, Int, Pair<Int, Int>>? = when (brandOf(app)) {
+        "prime" -> Triple(R.drawable.logo_primevideo, R.drawable.logo_primevideo_onlight, 140 to 43)
+        "disney" -> Triple(R.drawable.logo_disney_plus, R.drawable.logo_disney_plus, 112 to 61)
+        "netflix" -> Triple(R.drawable.logo_netflix, R.drawable.logo_netflix, 132 to 36)
+        "youtube" -> Triple(R.drawable.logo_youtube, R.drawable.logo_youtube_onlight, 140 to 31)
+        "spotify" -> Triple(R.drawable.logo_spotify, R.drawable.logo_spotify, 138 to 41)
+        "appletv" -> Triple(R.drawable.logo_appletv, R.drawable.logo_appletv_onlight, 100 to 38)
+        "max" -> Triple(R.drawable.logo_max, R.drawable.logo_max, 116 to 32)
+        else -> null
+    }
+    val tvIcon = LocalAppIcons.current[app.id]
+    when {
+        art != null -> Image(
+            painterResource(if (dark) art.first else art.second), contentDescription = app.name,
+            contentScale = ContentScale.Fit,
+            // Disney+ only ships a white logo; on light backgrounds it is shown in ink colour.
+            colorFilter = if (!dark && brandOf(app) == "disney") ColorFilter.tint(Ink) else null,
+            modifier = Modifier.size(d.dp(art.third.first * k), d.dp(art.third.second * k))
         )
-        "disney" -> Image(
-            painterResource(R.drawable.logo_disney_plus), contentDescription = "Disney+",
-            // The official logo is white; on the light theme draw it in ink colour.
-            colorFilter = if (pal.dark) null else ColorFilter.tint(Ink),
-            modifier = Modifier.size(d.dp(112 * k), d.dp(61 * k))
+        tvIcon != null -> Image(
+            tvIcon, contentDescription = app.name, contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().padding(d.dp(14))
         )
-        "netflix" -> Text(
-            "NETFLIX", color = NetflixRed, fontSize = d.sp(40 * k), fontWeight = FontWeight.Black,
-            fontFamily = CondensedFont, letterSpacing = d.sp(-0.5 * k),
-            style = TextStyle(textGeometricTransform = TextGeometricTransform(scaleX = .86f))
-        )
-        "youtube" -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(d.dp(46 * k), d.dp(32 * k)).background(Color(0xFFFF0000), RoundedCornerShape(d.dp(9 * k))),
-                contentAlignment = Alignment.Center
-            ) { Icon("play", Modifier.size(d.dp(14 * k)), Color.White) }
-            Spacer(Modifier.width(d.dp(7 * k)))
-            Text("YouTube", color = Ink, fontSize = d.sp(28 * k), fontWeight = FontWeight.Bold, letterSpacing = d.sp(-1 * k))
-        }
-        "spotify" -> Text("Spotify", color = Color(0xFF1ED760), fontSize = d.sp(32 * k), fontWeight = FontWeight.Bold)
-        "max" -> Text("max", color = Color(0xFF6E8BFF), fontSize = d.sp(38 * k), fontWeight = FontWeight.Black, letterSpacing = d.sp(-1 * k))
         else -> Text(
-            name, color = Ink, fontSize = d.sp(26 * k), fontWeight = FontWeight.SemiBold,
+            app.name, color = Ink, fontSize = d.sp(26 * k), fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = d.dp(10))
         )
     }
 }
 
-private val CondensedFont = FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD))
 
 // ---------------------------------------------------------------------------
 // Page 2 — numbers, input source and colour keys
@@ -822,7 +823,7 @@ private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
                         onLongClick = { actions.togglePin(app) },
                         onClick = { actions.launchApp(app.id) }
                     ) {
-                        BrandLogo(brandOf(app), 1.15f, app.name)
+                        AppLogo(app, 1.15f)
                         if (pinned) Icon(
                             "pin", Modifier.align(Alignment.TopEnd).padding(d.dp(16)).size(d.dp(22)), InkMuted
                         )

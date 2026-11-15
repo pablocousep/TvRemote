@@ -32,7 +32,8 @@ class SamsungRemote(
     context: Context,
     private val onStatus: (String) -> Unit,
     private val onConnectionChanged: (Boolean) -> Unit = {},
-    private val onInstalledApps: (List<TvApp>) -> Unit = {}
+    private val onInstalledApps: (List<TvApp>) -> Unit = {},
+    private val onAppIcon: (iconPath: String, png: ByteArray) -> Unit = { _, _ -> }
 ) {
     private val prefs = context.getSharedPreferences("samsung_tv_pairing", Context.MODE_PRIVATE)
     @Volatile private var socket: WebSocket? = null
@@ -113,9 +114,16 @@ class SamsungRemote(
                             val apps = (0 until list.length()).mapNotNull { i ->
                                 val o = list.optJSONObject(i) ?: return@mapNotNull null
                                 val id = o.optString("appId").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                                TvApp(id, o.optString("name").ifBlank { id })
+                                TvApp(id, o.optString("name").ifBlank { id }, o.optString("icon").takeIf { it.isNotBlank() && it != "null" })
                             }
                             onInstalledApps(apps.sortedBy { it.name.lowercase() })
+                        }
+                    } else if (root.optString("event") == "ed.apps.icon") {
+                        val d = root.optJSONObject("data")
+                        val path = d?.optString("iconPath").orEmpty()
+                        val b64 = d?.optString("imageBase64").orEmpty()
+                        if (path.isNotEmpty() && b64.isNotEmpty()) {
+                            runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()?.let { onAppIcon(path, it) }
                         }
                     } else if (root.optString("event") == "ms.channel.unauthorized") {
                         onStatus("El televisor rechazó la autorización. Vuelve a emparejarlo.")
@@ -253,6 +261,19 @@ class SamsungRemote(
         prefs.getString("token_$oldIp", null)?.let { edit.putString("token_$newIp", it) }
         prefs.getString("spki_$oldIp", null)?.let { edit.putString("spki_$newIp", it) }
         edit.apply()
+    }
+
+    /** Asks the TV for an app's own icon; it arrives through onAppIcon. */
+    fun requestAppIcon(iconPath: String) {
+        val payload = JSONObject().apply {
+            put("method", "ms.channel.emit")
+            put("params", JSONObject().apply {
+                put("event", "ed.apps.icon")
+                put("to", "host")
+                put("data", JSONObject().put("iconPath", iconPath))
+            })
+        }.toString()
+        socket?.send(payload)
     }
 
     fun forgetPairing(ip: String) {

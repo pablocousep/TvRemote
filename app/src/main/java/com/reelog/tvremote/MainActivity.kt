@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
                 pinnedApps = vm.pinnedApps.toList(),
                 stConfigured = vm.stConfigured.value,
                 stDevice = vm.stDevice.value,
-                stDevices = vm.stDevices.toList()
+                stDevices = vm.stDevices.toList(),
+                appIcons = vm.appIcons.toMap()
             )
             RemoteScreen(state, actions)
         }

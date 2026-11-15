@@ -46,4 +46,4 @@ Guarda el keystore en un lugar seguro: sin él no podrás publicar actualizacion
 - Comunicación WSS por el puerto 8002, emparejamiento con token y fijación TOFU del certificado por IP.
 - El móvil y el televisor deben estar en la misma red local.
 - La compatibilidad depende del modelo y firmware; algunas teclas varían (usa el probador de teclas en Ajustes).
-- Logo de Prime basado en Simple Icons (CC0). Prime Video, Disney+ y Netflix son marcas de sus propietarios.
+- Logos oficiales de las apps (Prime Video, Disney+, Netflix, YouTube, Spotify, Apple TV+ y Max) obtenidos de sus recursos de marca y de Wikimedia Commons; son marcas de sus propietarios. El resto de apps usa el icono que envía la propia TV.
