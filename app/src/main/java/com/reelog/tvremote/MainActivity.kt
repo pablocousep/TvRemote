@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
                         } else if (tv?.macAddress != null) {
                             statusState.value = "Enviando señal para encender el televisor…"
                             lifecycleScope.launch {
-                                val result = WakeOnLan.wake(tv.macAddress)
+                                val result = WakeOnLan.wake(tv.macAddress, tv.ip)
                                 statusState.value = if (result.isSuccess)
                                     "Señal Wake-on-LAN enviada. Si no enciende, activa Encendido por red en el televisor."
                                 else "No se pudo enviar la señal: " + (result.exceptionOrNull()?.localizedMessage ?: "error de red")
@@ -137,6 +137,10 @@ private fun RemoteHome(
     }
     var showDevices by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
+
+    LaunchedEffect(selectedTv?.ip) {
+        selectedTv?.let { onConnect(it) }
+    }
 
     Surface(Modifier.fillMaxSize(), color = bg) {
         Column(
@@ -266,7 +270,6 @@ private fun RemoteHome(
                                 selectedTv = tv
                                 tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
                                     .putString("model", tv.model).putString("mac", tv.macAddress).apply()
-                                onConnect(tv)
                                 showDevices = false
                             },
                             onForget = { onForget(tv) })
