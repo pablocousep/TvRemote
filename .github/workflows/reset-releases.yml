@@ -1,0 +1,47 @@
+name: Reset releases (one-off)
+
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/workflows/reset-releases.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK packages
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+      - name: Delete all existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' |
+          while read -r tag; do
+            echo "Deleting release $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+          done
+      - name: Publish latest APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk TvRemote-v0.3.0.apk
+          gh release create v0.3.0 TvRemote-v0.3.0.apk --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --latest \
+            --title "TvRemote v0.3.0" \
+            --notes "Nueva interfaz oscura tipo cristal, logos oficiales de Prime Video y Disney+, animaciones en la barra inferior y entre pestañas, páginas de números y touchpad, pestañas de Aplicaciones, Transmitir y Ajustes. APK de depuración."
