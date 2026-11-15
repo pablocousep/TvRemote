@@ -221,6 +221,51 @@ private fun RemoteHome(
 }
 
 @Composable
+private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color = white) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val sw = (minOf(w, h) * .085f).coerceAtLeast(1.8.dp.toPx())
+        val stroke = Stroke(width = sw, cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
+            drawLine(tint, Offset(x1*w, y1*h), Offset(x2*w, y2*h), sw,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+        when (kind) {
+            "power" -> {
+                drawArc(tint, 135f, 270f, false, Offset(w*.16f,h*.16f), Size(w*.68f,h*.68f), style=stroke)
+                line(.5f,.04f,.5f,.48f)
+            }
+            "volume" -> {
+                val p = Path().apply { moveTo(w*.10f,h*.40f); lineTo(w*.30f,h*.40f); lineTo(w*.56f,h*.20f); lineTo(w*.56f,h*.80f); lineTo(w*.30f,h*.60f); lineTo(w*.10f,h*.60f); close() }
+                drawPath(p,tint)
+                drawArc(tint,-55f,110f,false,Offset(w*.38f,h*.20f),Size(w*.48f,h*.60f),style=stroke)
+                drawArc(tint,-48f,96f,false,Offset(w*.45f,h*.08f),Size(w*.48f,h*.84f),style=stroke)
+            }
+            "tv" -> { drawRoundRect(tint,Offset(w*.12f,h*.18f),Size(w*.76f,h*.58f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw),style=stroke); line(.34f,.88f,.66f,.88f) }
+            "up" -> { line(.18f,.68f,.5f,.30f); line(.5f,.30f,.82f,.68f) }
+            "down" -> { line(.18f,.32f,.5f,.70f); line(.5f,.70f,.82f,.32f) }
+            "left" -> { line(.68f,.16f,.32f,.5f); line(.32f,.5f,.68f,.84f) }
+            "right" -> { line(.32f,.16f,.68f,.5f); line(.68f,.5f,.32f,.84f) }
+            "back" -> { line(.78f,.5f,.22f,.5f); line(.22f,.5f,.48f,.24f); line(.22f,.5f,.48f,.76f) }
+            "home" -> { val p=Path().apply { moveTo(w*.16f,h*.46f); lineTo(w*.5f,h*.16f); lineTo(w*.84f,h*.46f); lineTo(w*.84f,h*.86f); lineTo(w*.16f,h*.86f); close() }; drawPath(p,tint,style=stroke) }
+            "play" -> { val p=Path().apply { moveTo(w*.25f,h*.12f); lineTo(w*.78f,h*.5f); lineTo(w*.25f,h*.88f); close() }; drawPath(p,tint) }
+            "rewind", "forward" -> {
+                val start=if(kind=="rewind") 35f else 215f
+                drawArc(tint,start,290f,false,Offset(w*.12f,h*.12f),Size(w*.76f,h*.76f),style=stroke)
+                if(kind=="rewind"){ line(.18f,.12f,.18f,.36f); line(.18f,.12f,.42f,.12f) }
+                else { line(.82f,.88f,.82f,.64f); line(.82f,.88f,.58f,.88f) }
+            }
+            "remote" -> { drawRoundRect(tint,Offset(w*.25f,h*.08f),Size(w*.5f,h*.84f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw*2),style=stroke); drawCircle(tint,w*.5f,h*.30f,w*.045f) }
+            "apps" -> { for (x in 0..1) for(y in 0..1) drawRoundRect(tint,Offset(w*(.12f+x*.42f),h*(.12f+y*.42f)),Size(w*.32f,h*.32f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw),style=stroke) }
+            "cast" -> { drawArc(tint,180f,90f,false,Offset(w*.10f,h*.10f),Size(w*.80f,h*.80f),style=stroke); drawArc(tint,180f,90f,false,Offset(w*.10f,h*.42f),Size(w*.48f,h*.48f),style=stroke); drawCircle(tint,w*.18f,h*.82f,w*.07f) }
+            "settings" -> { drawCircle(tint,w*.5f,h*.5f,w*.30f,style=stroke); drawCircle(tint,w*.5f,h*.5f,w*.10f) }
+        }
+    }
+}
+
+@Composable
 private fun AppTile(name: String, tint: Color, modifier: Modifier = Modifier) {
     Surface(color = panelLight, shape = RoundedCornerShape(20.dp), modifier = modifier.height(72.dp)) {
         Box(contentAlignment = Alignment.Center) {
