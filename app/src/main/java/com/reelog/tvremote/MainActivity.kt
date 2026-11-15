@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
@@ -26,14 +28,15 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-private val bg = Color(0xFF050607)
+private val bg = Color(0xFF030405)
 private val panel = Color(0xFF111316)
-private val panelLight = Color(0xFF24272C)
-private val panelInner = Color(0xFF191C20)
+private val panelLight = Color(0xFF25282D)
+private val panelInner = Color(0xFF191B20)
 private val accent = Color(0xFFF2F3F5)
-private val muted = Color(0xFF92979F)
+private val muted = Color(0xFFB0B3BA)
 private val white = Color(0xFFF5F7F6)
 
 class MainActivity : ComponentActivity() {
