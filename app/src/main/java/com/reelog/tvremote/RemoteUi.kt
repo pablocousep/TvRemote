@@ -9,6 +9,10 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -145,7 +149,11 @@ class RemoteActions(
     val forget: (SamsungTv) -> Unit,
     val disconnect: () -> Unit,
     val openCastSettings: () -> Unit,
-    val setHaptics: (Boolean) -> Unit
+    val setHaptics: (Boolean) -> Unit,
+    val probeTv: () -> Unit = {},
+    val wakeTest: () -> Unit = {},
+    val saveMac: (String) -> Unit = {},
+    val clearLog: () -> Unit = {}
 )
 
 // ---------------------------------------------------------------------------
@@ -161,7 +169,9 @@ fun RemoteScreen(
     tvs: List<SamsungTv>,
     selectedTv: SamsungTv?,
     haptics: Boolean,
-    actions: RemoteActions
+    actions: RemoteActions,
+    powerLog: List<String> = emptyList(),
+    powerBusy: Boolean = false
 ) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Bg)) {
         val scale = min(maxWidth.value / DESIGN_W, maxHeight.value / DESIGN_H)
@@ -172,7 +182,7 @@ fun RemoteScreen(
 
         CompositionLocalProvider(LocalDs provides d, LocalHaptics provides haptics) {
             Box(Modifier.align(Alignment.Center).size(d.dp(DESIGN_W), d.dp(DESIGN_H))) {
-                Header(selectedTv, connected, actions, onPickTv = { showPicker = true })
+                Header(selectedTv, connected, powerBusy, actions, onPickTv = { showPicker = true })
 
                 AnimatedContent(
                     targetState = tab,
@@ -200,7 +210,7 @@ fun RemoteScreen(
                             }
                             1 -> AppsTab(actions)
                             2 -> CastTab(actions)
-                            else -> SettingsTab(status, connected, scanning, tvs, selectedTv, haptics, actions)
+                            else -> SettingsTab(status, connected, scanning, tvs, selectedTv, haptics, actions, powerLog, powerBusy)
                         }
                     }
                 }
@@ -223,10 +233,20 @@ fun RemoteScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun Header(tv: SamsungTv?, connected: Boolean, actions: RemoteActions, onPickTv: () -> Unit) {
+private fun Header(tv: SamsungTv?, connected: Boolean, powerBusy: Boolean, actions: RemoteActions, onPickTv: () -> Unit) {
     val d = LocalDs.current
     RoundButton(Modifier.at(d, 43, 93, 90, 90), "Encender o apagar", onClick = actions.power) {
         Icon("power", Modifier.size(d.dp(40)))
+    }
+    if (powerBusy) {
+        val spin = rememberInfiniteTransition(label = "powerSpin")
+        val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "angle")
+        Canvas(Modifier.at(d, 39, 89, 98, 98)) {
+            drawArc(
+                Brush.sweepGradient(listOf(Color.Transparent, Ink.copy(.9f))), angle, 300f, false,
+                style = Stroke(2.dp.toPx(), cap = StrokeCap.Round)
+            )
+        }
     }
     RoundButton(Modifier.at(d, 561, 94, 88, 88), "Silenciar", onClick = { actions.key("KEY_MUTE") }) {
         Icon("speaker", Modifier.size(d.dp(46)))
@@ -693,7 +713,8 @@ private fun CastTab(actions: RemoteActions) {
 @Composable
 private fun SettingsTab(
     status: String, connected: Boolean, scanning: Boolean, tvs: List<SamsungTv>,
-    selectedTv: SamsungTv?, haptics: Boolean, actions: RemoteActions
+    selectedTv: SamsungTv?, haptics: Boolean, actions: RemoteActions,
+    powerLog: List<String>, powerBusy: Boolean
 ) {
     val d = LocalDs.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -722,6 +743,7 @@ private fun SettingsTab(
             }
         }
         Card { TvList(scanning, tvs, selectedTv, actions, onChosen = {}) }
+        if (selectedTv != null) Card { PowerLab(selectedTv, powerLog, powerBusy, actions) }
         Card {
             Row(Modifier.fillMaxWidth().pressable { actions.setHaptics(!haptics) }, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -734,6 +756,58 @@ private fun SettingsTab(
         Label(
             "TvRemote · Samsung Smart TV (Tizen 2016+)\nEl móvil y el televisor deben estar en la misma Wi-Fi.",
             20, InkMuted.copy(alpha = .7f), Modifier.padding(start = d.dp(52), top = d.dp(4), bottom = d.dp(40))
+        )
+    }
+}
+
+@Composable
+private fun PowerLab(tv: SamsungTv, log: List<String>, busy: Boolean, actions: RemoteActions) {
+    val d = LocalDs.current
+    var mac by remember(tv.macAddress) { mutableStateOf(tv.macAddress ?: "") }
+    Text("Pruebas de encendido", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+    Label(
+        "Para encender por red, activa en la TV: Ajustes › General › Red › Configuración experta › " +
+            "Encender con móvil. Si la TV va por cable, usa la MAC del cable.", 20, InkMuted
+    )
+    Spacer(Modifier.height(d.dp(18)))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.weight(1f).height(d.dp(76)).background(Color.White.copy(.04f), RoundedCornerShape(d.dp(22)))
+                .border(1.dp, Color.White.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (mac.isEmpty()) Label("MAC de la TV (AA:BB:CC:DD:EE:FF)", 22, InkMuted)
+            BasicTextField(
+                mac, { mac = it.take(17) }, singleLine = true,
+                textStyle = TextStyle(color = Ink, fontSize = d.sp(25), fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(Ink),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { actions.saveMac(mac) }),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Spacer(Modifier.width(d.dp(14)))
+        PillButton("Guardar", Modifier.width(d.dp(150))) { actions.saveMac(mac) }
+    }
+    Spacer(Modifier.height(d.dp(16)))
+    Row(horizontalArrangement = Arrangement.spacedBy(d.dp(14))) {
+        PillButton("Estado", Modifier.weight(1f), onClick = actions.probeTv)
+        PillButton("Wake-on-LAN", Modifier.weight(1.3f), onClick = actions.wakeTest)
+        PillButton(if (busy) "…" else "Encender", Modifier.weight(1.1f), onClick = actions.power)
+    }
+    if (log.isNotEmpty()) {
+        Spacer(Modifier.height(d.dp(18)))
+        Column(
+            Modifier.fillMaxWidth().background(Color.Black.copy(.35f), RoundedCornerShape(d.dp(20)))
+                .padding(d.dp(18))
+        ) {
+            log.take(14).forEach {
+                Text(it, color = InkMuted, fontSize = d.sp(17), fontFamily = FontFamily.Monospace)
+            }
+        }
+        Text(
+            "Borrar registro", color = InkMuted, fontSize = d.sp(20),
+            modifier = Modifier.padding(top = d.dp(10)).pressable(onClick = actions.clearLog).padding(d.dp(6))
         )
     }
 }

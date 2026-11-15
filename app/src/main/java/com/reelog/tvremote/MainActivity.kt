@@ -15,7 +15,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private lateinit var remote: SamsungRemote
@@ -28,12 +33,16 @@ class MainActivity : ComponentActivity() {
     private val foundTvs = mutableStateListOf<SamsungTv>()
     private val selectedTv = mutableStateOf<SamsungTv?>(null)
     private val haptics = mutableStateOf(true)
+    private val powerLog = mutableStateListOf<String>()
+    private var powerJob: Job? = null
+    private val powerBusy = mutableStateOf(false)
+    private lateinit var tvPrefs: android.content.SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         goImmersive()
 
-        val tvPrefs = getSharedPreferences("tvremote_selected_tv", Context.MODE_PRIVATE)
+        tvPrefs = getSharedPreferences("tvremote_selected_tv", Context.MODE_PRIVATE)
         val settings = getSharedPreferences("tvremote_settings", Context.MODE_PRIVATE)
         haptics.value = settings.getBoolean("haptics", true)
         selectedTv.value = tvPrefs.getString("ip", null)?.let { ip ->
@@ -67,7 +76,11 @@ class MainActivity : ComponentActivity() {
             forget = { remote.forgetPairing(it.ip) },
             disconnect = { remote.close(); setStatus("Desconectado") },
             openCastSettings = { openCastSettings() },
-            setHaptics = { on -> haptics.value = on; settings.edit().putBoolean("haptics", on).apply() }
+            setHaptics = { on -> haptics.value = on; settings.edit().putBoolean("haptics", on).apply() },
+            probeTv = { probeTv() },
+            wakeTest = { wakeTest() },
+            saveMac = { saveMacFromUser(it) },
+            clearLog = { powerLog.clear() }
         )
 
         setContent {
@@ -79,6 +92,8 @@ class MainActivity : ComponentActivity() {
                 tvs = foundTvs,
                 selectedTv = selectedTv.value,
                 haptics = haptics.value,
+                powerLog = powerLog,
+                powerBusy = powerBusy.value,
                 actions = actions
             )
         }
@@ -130,21 +145,118 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun log(line: String) {
+        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        powerLog.add(0, "$time  $line")
+        while (powerLog.size > 60) powerLog.removeAt(powerLog.lastIndex)
+    }
+
+    private fun saveMac(tv: SamsungTv, mac: String) {
+        if (tv.macAddress.equals(mac, ignoreCase = true)) return
+        val updated = tv.copy(macAddress = mac)
+        selectedTv.value = updated
+        tvPrefs.edit().putString("mac", mac).apply()
+        log("MAC guardada: $mac")
+    }
+
+    private fun saveMacFromUser(input: String) {
+        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
+        val mac = WakeOnLan.normalizeMac(input) ?: return setStatus("MAC no válida. Formato: AA:BB:CC:DD:EE:FF")
+        saveMac(tv, mac)
+        setStatus("MAC guardada")
+    }
+
+    private suspend fun awaitConnected(timeoutMs: Long): Boolean {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            if (remote.isConnected()) return true
+            delay(150)
+        }
+        return remote.isConnected()
+    }
+
+    private fun launchPowerJob(block: suspend () -> Unit) {
+        if (powerJob?.isActive == true) return
+        powerBusy.value = true
+        powerJob = lifecycleScope.launch {
+            try { block() } finally { powerJob = null; powerBusy.value = false }
+        }
+    }
+
+    /**
+     * Power button.
+     *  - Connected: KEY_POWER (turns the TV off, or on from network standby).
+     *  - TV answers on its REST API but we are not connected: it is on, or in a standby that
+     *    keeps the network alive. KEY_POWER toggles both, so connect and send it.
+     *  - TV does not answer: deep standby. Send Wake-on-LAN rounds until it answers, connect,
+     *    and if it only woke its network (PowerState = standby) send KEY_POWER to light the screen.
+     */
     private fun powerToggle() {
-        val tv = selectedTv.value
-        when {
-            remote.isConnected() -> remote.sendKey("KEY_POWER")
-            tv?.macAddress != null -> {
-                setStatus("Enviando señal para encender el televisor…")
-                lifecycleScope.launch {
-                    val result = WakeOnLan.wake(tv.macAddress, tv.ip)
-                    setStatus(
-                        if (result.isSuccess) "Señal Wake-on-LAN enviada. Si no enciende, activa Encendido por red en el televisor."
-                        else "No se pudo enviar la señal: " + (result.exceptionOrNull()?.localizedMessage ?: "error de red")
-                    )
+        if (remote.isConnected()) {
+            log("Conectado: envío KEY_POWER")
+            remote.sendKey("KEY_POWER")
+            return
+        }
+        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
+        launchPowerJob {
+            setStatus("Comprobando el televisor…")
+            val probe = WakeOnLan.probe(tv.ip)
+            if (probe.reachable) {
+                log("La TV responde (estado: ${probe.powerState ?: "no informado"}, red: ${probe.networkType ?: "?"})")
+                probe.mac?.let { saveMac(tv, it) }
+                remote.connect(tv.ip)
+                if (awaitConnected(8_000)) {
+                    log("Conectado: envío KEY_POWER")
+                    remote.sendKey("KEY_POWER")
+                } else {
+                    log("No se pudo abrir el canal de control")
                 }
+                return@launchPowerJob
             }
-            else -> setStatus("Conecta la TV encendida una vez para guardar su dirección MAC y poder despertarla.")
+            val mac = selectedTv.value?.macAddress
+            if (mac == null) {
+                log("La TV no responde y no hay MAC guardada")
+                setStatus("Conecta la TV encendida una vez (o escribe su MAC en Ajustes) para poder encenderla.")
+                return@launchPowerJob
+            }
+            log("La TV no responde: envío Wake-on-LAN a $mac")
+            setStatus("Encendiendo el televisor…")
+            val woke = WakeOnLan.wakeAndWait(this, mac, tv.ip, log = ::log)
+            if (woke == null) {
+                setStatus("La TV no respondió. Activa \"Encender con móvil\" en Ajustes > General > Red > Configuración experta de la TV.")
+                return@launchPowerJob
+            }
+            woke.mac?.let { saveMac(tv, it) }
+            remote.connect(tv.ip)
+            val up = awaitConnected(10_000)
+            if (woke.powerState == "standby" && up) {
+                log("Red despierta pero pantalla apagada: envío KEY_POWER")
+                remote.sendKey("KEY_POWER")
+            }
+            setStatus("Televisor encendido")
+        }
+    }
+
+    private fun probeTv() {
+        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
+        launchPowerJob {
+            log("Comprobando ${tv.ip}…")
+            val p = WakeOnLan.probe(tv.ip, 1500)
+            if (p.reachable) {
+                log("Responde · estado: ${p.powerState ?: "no informado"} · red: ${p.networkType ?: "?"} · MAC: ${p.mac ?: "?"}")
+                p.mac?.let { saveMac(tv, it) }
+            } else {
+                log("No responde (apagada del todo, en reposo profundo o IP cambiada)")
+            }
+        }
+    }
+
+    private fun wakeTest() {
+        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
+        val mac = tv.macAddress ?: return setStatus("No hay MAC guardada")
+        launchPowerJob {
+            log("Prueba Wake-on-LAN → $mac")
+            WakeOnLan.wakeAndWait(this, mac, tv.ip, log = ::log)
         }
     }
 
