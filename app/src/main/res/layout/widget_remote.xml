@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <ImageButton android:id="@+id/w_power" style="@style/WidgetButton"
+        android:contentDescription="Encender o apagar" android:src="@drawable/ic_w_power" />
+    <ImageButton android:id="@+id/w_vol_down" style="@style/WidgetButton"
+        android:contentDescription="Bajar volumen" android:src="@drawable/ic_w_minus" />
+    <ImageButton android:id="@+id/w_mute" style="@style/WidgetButton"
+        android:contentDescription="Silenciar" android:src="@drawable/ic_w_mute" />
+    <ImageButton android:id="@+id/w_vol_up" style="@style/WidgetButton"
+        android:contentDescription="Subir volumen" android:src="@drawable/ic_w_plus" />
+    <ImageButton android:id="@+id/w_open" style="@style/WidgetButton"
+        android:contentDescription="Abrir TvRemote" android:src="@drawable/ic_w_remote" />
+</LinearLayout>

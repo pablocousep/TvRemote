@@ -3,6 +3,11 @@ package com.reelog.tvremote
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -22,7 +27,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onClick as semanticsClick
+import androidx.compose.ui.semantics.onLongClick as semanticsLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +64,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
@@ -65,6 +72,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -96,13 +104,50 @@ import kotlin.math.sin
 private const val DESIGN_W = 692f
 private const val DESIGN_H = 1490f
 
-private val Bg = Color(0xFF000000)
-private val SurfaceTop = Color(0xFF2A2B2F)
-private val SurfaceBottom = Color(0xFF18191C)
-private val NavBg = Color(0xFF141517)
-private val Ink = Color(0xFFF4F4F6)
-private val InkMuted = Color(0xFFA3A5AA)
-private val DotOff = Color(0xFF4A4B4F)
+/** Colours for one theme. The dark one is the reference mock-up. */
+@Immutable
+data class Palette(
+    val dark: Boolean,
+    val bg: Color, val surfaceTop: Color, val surfaceBottom: Color,
+    val navTop: Color, val navBg: Color, val pillTop: Color, val pillBottom: Color,
+    val ink: Color, val inkMuted: Color, val dotOff: Color,
+    /** Tint for highlights, hairlines and pressed overlays (white on dark, black on light). */
+    val fg: Color,
+    val dial: List<Color>, val ok: List<Color>, val round: List<Color>,
+    val shadow: Float, val dialogBg: Color, val toastBg: Color,
+    val switchOn: Color, val switchOff: Color
+)
+
+val DarkPalette = Palette(
+    dark = true,
+    bg = Color(0xFF000000), surfaceTop = Color(0xFF2A2B2F), surfaceBottom = Color(0xFF18191C),
+    navTop = Color(0xFF1B1C1F), navBg = Color(0xFF141517), pillTop = Color(0xFF36373C), pillBottom = Color(0xFF26272B),
+    ink = Color(0xFFF4F4F6), inkMuted = Color(0xFFA3A5AA), dotOff = Color(0xFF4A4B4F), fg = Color.White,
+    dial = listOf(Color(0xFF3D3E42), Color(0xFF2C2D31), Color(0xFF1F2023)),
+    ok = listOf(Color(0xFF34353A), Color(0xFF2A2B2F), Color(0xFF222326)),
+    round = listOf(Color(0xFF26272A), Color(0xFF1A1B1D)),
+    shadow = .55f, dialogBg = Color(0xFF111214), toastBg = Color(0xFF1E1F22),
+    switchOn = Color(0xFF4A4C52), switchOff = Color(0xFF232427)
+)
+
+val LightPalette = Palette(
+    dark = false,
+    bg = Color(0xFFF1F2F5), surfaceTop = Color(0xFFFFFFFF), surfaceBottom = Color(0xFFE7E9ED),
+    navTop = Color(0xFFFFFFFF), navBg = Color(0xFFECEEF1), pillTop = Color(0xFFE3E5E9), pillBottom = Color(0xFFD5D8DD),
+    ink = Color(0xFF15171A), inkMuted = Color(0xFF686C73), dotOff = Color(0xFFC6C9CF), fg = Color.Black,
+    dial = listOf(Color(0xFFFFFFFF), Color(0xFFF0F1F4), Color(0xFFDCDFE4)),
+    ok = listOf(Color(0xFFFFFFFF), Color(0xFFF4F5F7), Color(0xFFE6E8EC)),
+    round = listOf(Color(0xFFFFFFFF), Color(0xFFE8EAEE)),
+    shadow = .16f, dialogBg = Color(0xFFFFFFFF), toastBg = Color(0xFFFFFFFF),
+    switchOn = Color(0xFFBFC3CA), switchOff = Color(0xFFE2E4E8)
+)
+
+private val LocalPalette = staticCompositionLocalOf { DarkPalette }
+private val pal: Palette @Composable @ReadOnlyComposable get() = LocalPalette.current
+private val Bg: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.bg
+private val Ink: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.ink
+private val InkMuted: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.inkMuted
+private val DotOff: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.dotOff
 private val PrimeBlue = Color(0xFF1FA6E0)
 private val NetflixRed = Color(0xFFE50914)
 private val OnlineGreen = Color(0xFF3DDC84)
@@ -153,7 +198,35 @@ class RemoteActions(
     val probeTv: () -> Unit = {},
     val wakeTest: () -> Unit = {},
     val saveMac: (String) -> Unit = {},
-    val clearLog: () -> Unit = {}
+    val clearLog: () -> Unit = {},
+    val reconnect: () -> Unit = {},
+    val togglePin: (TvApp) -> Unit = {},
+    val setHardwareVolume: (Boolean) -> Unit = {},
+    val setTheme: (String) -> Unit = {},
+    val saveSmartThingsToken: (String) -> Unit = {},
+    val chooseSmartThingsDevice: (StDevice) -> Unit = {}
+)
+
+/** Snapshot of everything the screen shows. */
+data class RemoteUiState(
+    val status: String = "",
+    val statusSerial: Int = 0,
+    val connected: Boolean = false,
+    val connecting: Boolean = false,
+    val connectionLost: Boolean = false,
+    val scanning: Boolean = false,
+    val tvs: List<SamsungTv> = emptyList(),
+    val selectedTv: SamsungTv? = null,
+    val haptics: Boolean = true,
+    val hardwareVolume: Boolean = true,
+    val theme: String = "dark",
+    val powerLog: List<String> = emptyList(),
+    val powerBusy: Boolean = false,
+    val installedApps: List<TvApp> = emptyList(),
+    val pinnedApps: List<TvApp> = TvApps.take(3),
+    val stConfigured: Boolean = false,
+    val stDevice: StDevice? = null,
+    val stDevices: List<StDevice> = emptyList()
 )
 
 // ---------------------------------------------------------------------------
@@ -161,28 +234,29 @@ class RemoteActions(
 // ---------------------------------------------------------------------------
 
 @Composable
-fun RemoteScreen(
-    status: String,
-    statusSerial: Int,
-    connected: Boolean,
-    scanning: Boolean,
-    tvs: List<SamsungTv>,
-    selectedTv: SamsungTv?,
-    haptics: Boolean,
-    actions: RemoteActions,
-    powerLog: List<String> = emptyList(),
-    powerBusy: Boolean = false
-) {
+fun RemoteScreen(state: RemoteUiState, actions: RemoteActions) {
+    val palette = when (state.theme) {
+        "light" -> LightPalette
+        "system" -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
+        else -> DarkPalette
+    }
+    CompositionLocalProvider(LocalPalette provides palette) {
+        RemoteScreenContent(state, actions)
+    }
+}
+
+@Composable
+private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Bg)) {
         val scale = min(maxWidth.value / DESIGN_W, maxHeight.value / DESIGN_H)
         val d = Ds(scale, LocalDensity.current.fontScale)
-        var tab by remember { mutableIntStateOf(0) }
+        var tab by rememberSaveable { mutableIntStateOf(0) }
         var showPicker by remember { mutableStateOf(false) }
         val pager = rememberPagerState { 3 }
 
-        CompositionLocalProvider(LocalDs provides d, LocalHaptics provides haptics) {
+        CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
             Box(Modifier.align(Alignment.Center).size(d.dp(DESIGN_W), d.dp(DESIGN_H))) {
-                Header(selectedTv, connected, powerBusy, actions, onPickTv = { showPicker = true })
+                Header(state, actions, onPickTv = { showPicker = true })
 
                 AnimatedContent(
                     targetState = tab,
@@ -201,28 +275,54 @@ fun RemoteScreen(
                             0 -> {
                                 HorizontalPager(pager, Modifier.fillMaxWidth().height(d.dp(1015))) { page ->
                                     when (page) {
-                                        0 -> MainPage(actions)
+                                        0 -> MainPage(state.pinnedApps, actions)
                                         1 -> NumbersPage(actions)
                                         else -> TouchPage(actions)
                                     }
                                 }
                                 PageDots(pager.currentPage, pager.currentPageOffsetFraction, top = 1032)
                             }
-                            1 -> AppsTab(actions)
+                            1 -> AppsTab(state, actions)
                             2 -> CastTab(actions)
-                            else -> SettingsTab(status, connected, scanning, tvs, selectedTv, haptics, actions, powerLog, powerBusy)
+                            else -> SettingsTab(state, actions)
                         }
                     }
                 }
 
-                StatusToast(status, statusSerial)
+                ConnectionLostBanner(state.connectionLost, state.connecting, actions.reconnect)
+                if (!state.connectionLost) StatusToast(state.status, state.statusSerial)
                 BottomNav(tab) { tab = it }
             }
         }
 
         if (showPicker) {
-            CompositionLocalProvider(LocalDs provides d, LocalHaptics provides haptics) {
-                TvPickerDialog(status, scanning, tvs, selectedTv, actions) { showPicker = false }
+            CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
+                TvPickerDialog(state.status, state.scanning, state.tvs, state.selectedTv, actions) { showPicker = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionLostBanner(visible: Boolean, connecting: Boolean, onReconnect: () -> Unit) {
+    val d = LocalDs.current
+    Box(Modifier.at(d, 46, 1212, 600, 104), contentAlignment = Alignment.Center) {
+        AnimatedVisibility(
+            visible,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 }
+        ) {
+            Row(
+                Modifier.background(pal.toastBg, RoundedCornerShape(d.dp(30)))
+                    .border(1.dp, Color(0xFFE5484D).copy(.5f), RoundedCornerShape(d.dp(30)))
+                    .padding(start = d.dp(26), end = d.dp(10), top = d.dp(10), bottom = d.dp(10)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(d.dp(12)).background(Color(0xFFE5484D), CircleShape))
+                Spacer(Modifier.width(d.dp(14)))
+                Label("Conexión perdida", 22)
+                Spacer(Modifier.width(d.dp(20)))
+                PillButton(if (connecting) "Conectando…" else "Reconectar", Modifier.width(d.dp(200)), onClick = onReconnect)
             }
         }
     }
@@ -233,17 +333,21 @@ fun RemoteScreen(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun Header(tv: SamsungTv?, connected: Boolean, powerBusy: Boolean, actions: RemoteActions, onPickTv: () -> Unit) {
+private fun Header(state: RemoteUiState, actions: RemoteActions, onPickTv: () -> Unit) {
     val d = LocalDs.current
+    val tv = state.selectedTv
+    val connected = state.connected
+    val powerBusy = state.powerBusy
     RoundButton(Modifier.at(d, 43, 93, 90, 90), "Encender o apagar", onClick = actions.power) {
         Icon("power", Modifier.size(d.dp(40)))
     }
     if (powerBusy) {
         val spin = rememberInfiniteTransition(label = "powerSpin")
         val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "angle")
+        val ink = Ink
         Canvas(Modifier.at(d, 39, 89, 98, 98)) {
             drawArc(
-                Brush.sweepGradient(listOf(Color.Transparent, Ink.copy(.9f))), angle, 300f, false,
+                Brush.sweepGradient(listOf(Color.Transparent, ink.copy(.9f))), angle, 300f, false,
                 style = Stroke(2.dp.toPx(), cap = StrokeCap.Round)
             )
         }
@@ -268,10 +372,20 @@ private fun Header(tv: SamsungTv?, connected: Boolean, powerBusy: Boolean, actio
         ) {
             Box {
                 Icon("tv", Modifier.size(d.dp(30), d.dp(26)), Ink.copy(alpha = .85f))
-                if (connected) Box(
-                    Modifier.align(Alignment.TopEnd).offset(d.dp(5), d.dp(-3)).size(d.dp(9))
-                        .background(OnlineGreen, CircleShape).border(d.dp(2), Bg, CircleShape)
-                )
+                val busy = state.connecting || powerBusy
+                if (connected || busy) {
+                    val pulse = rememberInfiniteTransition(label = "pulse")
+                    val k by pulse.animateFloat(
+                        .55f, 1f, infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "k"
+                    )
+                    val dot by animateColorAsState(if (connected && !busy) OnlineGreen else Color(0xFFF5A623), label = "dot")
+                    Box(
+                        Modifier.align(Alignment.TopEnd).offset(d.dp(5), d.dp(-3)).size(d.dp(9))
+                            .graphicsLayer { if (busy && !connected) { alpha = k; scaleX = .8f + .3f * k; scaleY = scaleX } }
+                            .background(dot, CircleShape).border(d.dp(2), Bg, CircleShape)
+                    )
+                }
             }
             Spacer(Modifier.width(d.dp(14)))
             Text(
@@ -291,13 +405,18 @@ private fun Header(tv: SamsungTv?, connected: Boolean, powerBusy: Boolean, actio
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MainPage(actions: RemoteActions) {
+private fun MainPage(pinned: List<TvApp>, actions: RemoteActions) {
     val d = LocalDs.current
-    var playing by remember { mutableStateOf(false) }
+    var playing by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
-        BrandTile("prime", Modifier.at(d, 46, 16, 184, 100), "Abrir Prime Video") { actions.launchApp(TvApps[0].id) }
-        BrandTile("disney", Modifier.at(d, 254, 16, 184, 100), "Abrir Disney+") { actions.launchApp(TvApps[1].id) }
-        BrandTile("netflix", Modifier.at(d, 462, 16, 184, 100), "Abrir Netflix") { actions.launchApp(TvApps[2].id) }
+        // Up to three shortcuts, spread over the same 600 px row as the mock-up.
+        val n = pinned.size.coerceIn(1, 3)
+        val w = (600f - 24f * (n - 1)) / n
+        pinned.take(3).forEachIndexed { i, app ->
+            BrandTile(brandOf(app), Modifier.at(d, 46 + i * (w + 24f), 16, w, 100), "Abrir ${app.name}", app.name) {
+                actions.launchApp(app.id)
+            }
+        }
 
         DPad(Modifier.at(d, 86, 161, 520, 520), actions.key)
 
@@ -340,6 +459,7 @@ private fun DPad(modifier: Modifier, onKey: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val key by rememberUpdatedState(onKey)
     var pressed by remember { mutableStateOf<String?>(null) }
+    val p = pal
 
     val nudge by animateFloatAsState(if (pressed != null && pressed != "KEY_ENTER") 1f else 0f,
         spring(dampingRatio = .5f, stiffness = 700f), label = "nudge")
@@ -394,22 +514,22 @@ private fun DPad(modifier: Modifier, onKey: (String) -> Unit) {
             val r = size.minDimension / 2f
             drawCircle(
                 Brush.radialGradient(
-                    listOf(Color(0xFF3D3E42), Color(0xFF2C2D31), Color(0xFF1F2023)),
+                    p.dial,
                     center = Offset(size.width * .40f, size.height * .30f), radius = r * 1.35f
                 ), r
             )
             val sweep = when (pressed) {
                 "KEY_RIGHT" -> -45f; "KEY_DOWN" -> 45f; "KEY_LEFT" -> 135f; "KEY_UP" -> 225f; else -> null
             }
-            if (sweep != null) drawArc(Color.White.copy(alpha = .07f), sweep, 90f, true)
+            if (sweep != null) drawArc(p.fg.copy(alpha = .07f), sweep, 90f, true)
             drawCircle(
-                Brush.verticalGradient(listOf(Color.White.copy(.20f), Color.White.copy(.03f), Color.White.copy(.07f))),
+                Brush.verticalGradient(listOf(p.fg.copy(.20f), p.fg.copy(.03f), p.fg.copy(.07f))),
                 r - 0.5.dp.toPx(), style = Stroke(1.dp.toPx())
             )
             // Shadow cast by the raised OK button.
             drawCircle(
                 Brush.radialGradient(
-                    listOf(Color.Black.copy(.55f), Color.Black.copy(.25f), Color.Transparent),
+                    listOf(Color.Black.copy(p.shadow), Color.Black.copy(p.shadow * .45f), Color.Transparent),
                     center = Offset(center.x, center.y + r * .03f), radius = r * .58f
                 ), r * .58f, center = Offset(center.x, center.y + r * .03f)
             )
@@ -425,13 +545,13 @@ private fun DPad(modifier: Modifier, onKey: (String) -> Unit) {
                 val r = size.minDimension / 2f
                 drawCircle(
                     Brush.radialGradient(
-                        listOf(Color(0xFF34353A), Color(0xFF2A2B2F), Color(0xFF222326)),
+                        p.ok,
                         center = Offset(size.width * .42f, size.height * .32f), radius = r * 1.3f
                     ), r
                 )
-                if (pressed == "KEY_ENTER") drawCircle(Color.White.copy(.07f), r)
+                if (pressed == "KEY_ENTER") drawCircle(p.fg.copy(.07f), r)
                 drawCircle(
-                    Brush.verticalGradient(listOf(Color.White.copy(.18f), Color.White.copy(.02f), Color.White.copy(.05f))),
+                    Brush.verticalGradient(listOf(p.fg.copy(.18f), p.fg.copy(.02f), p.fg.copy(.05f))),
                     r - 0.5.dp.toPx(), style = Stroke(1.dp.toPx())
                 )
             }
@@ -449,7 +569,7 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
     Column(modifier.glass(shape), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.fillMaxWidth().weight(1f)
-                .background(if (upPressed) Color.White.copy(.07f) else Color.Transparent)
+                .background(if (upPressed) pal.fg.copy(.07f) else Color.Transparent)
                 .pressable(repeat = true, onPressedChange = { upPressed = it },
                     description = if (kind == "volume") "Subir volumen" else "Canal siguiente", onClick = onUp),
             contentAlignment = Alignment.Center
@@ -463,7 +583,7 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
         }
         Box(
             Modifier.fillMaxWidth().weight(1f)
-                .background(if (downPressed) Color.White.copy(.07f) else Color.Transparent)
+                .background(if (downPressed) pal.fg.copy(.07f) else Color.Transparent)
                 .pressable(repeat = true, onPressedChange = { downPressed = it },
                     description = if (kind == "volume") "Bajar volumen" else "Canal anterior", onClick = onDown),
             contentAlignment = Alignment.Center
@@ -475,13 +595,27 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
 }
 
 @Composable
-private fun BrandTile(brand: String, modifier: Modifier, description: String, onClick: () -> Unit) {
+private fun BrandTile(brand: String, modifier: Modifier, description: String, name: String, onClick: () -> Unit) {
     val d = LocalDs.current
-    GlassButton(modifier, RoundedCornerShape(d.dp(24)), description = description, onClick = onClick) { BrandLogo(brand, 1f) }
+    GlassButton(modifier, RoundedCornerShape(d.dp(24)), description = description, onClick = onClick) { BrandLogo(brand, 1f, name) }
+}
+
+/** Known apps get their logo; anything else is drawn as its name. */
+private fun brandOf(app: TvApp): String {
+    val n = app.name.lowercase()
+    return when {
+        app.id == "3201910019365" || "prime" in n -> "prime"
+        app.id == "3201901017640" || "disney" in n -> "disney"
+        app.id == "3201907018807" || app.id == "11101200001" || "netflix" in n -> "netflix"
+        app.id == "111299001912" || n == "youtube" -> "youtube"
+        "spotify" in n -> "spotify"
+        n == "max" || "hbo" in n -> "max"
+        else -> "text"
+    }
 }
 
 @Composable
-private fun BrandLogo(brand: String, k: Float) {
+private fun BrandLogo(brand: String, k: Float, name: String = "") {
     val d = LocalDs.current
     when (brand) {
         "prime" -> Image(
@@ -490,6 +624,8 @@ private fun BrandLogo(brand: String, k: Float) {
         )
         "disney" -> Image(
             painterResource(R.drawable.logo_disney_plus), contentDescription = "Disney+",
+            // The official logo is white; on the light theme draw it in ink colour.
+            colorFilter = if (pal.dark) null else ColorFilter.tint(Ink),
             modifier = Modifier.size(d.dp(112 * k), d.dp(61 * k))
         )
         "netflix" -> Text(
@@ -497,7 +633,21 @@ private fun BrandLogo(brand: String, k: Float) {
             fontFamily = CondensedFont, letterSpacing = d.sp(-0.5 * k),
             style = TextStyle(textGeometricTransform = TextGeometricTransform(scaleX = .86f))
         )
-        else -> Text(brand, color = Ink, fontSize = d.sp(28 * k), fontWeight = FontWeight.SemiBold)
+        "youtube" -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(d.dp(46 * k), d.dp(32 * k)).background(Color(0xFFFF0000), RoundedCornerShape(d.dp(9 * k))),
+                contentAlignment = Alignment.Center
+            ) { Icon("play", Modifier.size(d.dp(14 * k)), Color.White) }
+            Spacer(Modifier.width(d.dp(7 * k)))
+            Text("YouTube", color = Ink, fontSize = d.sp(28 * k), fontWeight = FontWeight.Bold, letterSpacing = d.sp(-1 * k))
+        }
+        "spotify" -> Text("Spotify", color = Color(0xFF1ED760), fontSize = d.sp(32 * k), fontWeight = FontWeight.Bold)
+        "max" -> Text("max", color = Color(0xFF6E8BFF), fontSize = d.sp(38 * k), fontWeight = FontWeight.Black, letterSpacing = d.sp(-1 * k))
+        else -> Text(
+            name, color = Ink, fontSize = d.sp(26 * k), fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = d.dp(10))
+        )
     }
 }
 
@@ -560,6 +710,7 @@ private fun TouchPage(actions: RemoteActions) {
     val view = LocalView.current
     val haptics = LocalHaptics.current
     var text by remember { mutableStateOf("") }
+    val clipboard = LocalClipboardManager.current
     val key by rememberUpdatedState(actions.key)
     Box(Modifier.fillMaxSize()) {
         // Text field + send.
@@ -578,7 +729,13 @@ private fun TouchPage(actions: RemoteActions) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            GlassButton(Modifier.size(d.dp(140), d.dp(76)), RoundedCornerShape(d.dp(20)),
+            GlassButton(Modifier.size(d.dp(76), d.dp(76)), RoundedCornerShape(d.dp(20)), description = "Pegar en la TV",
+                onClick = {
+                    val clip = clipboard.getText()?.text.orEmpty()
+                    if (clip.isNotEmpty()) actions.text(clip)
+                }) { Icon("paste", Modifier.size(d.dp(32))) }
+            Spacer(Modifier.width(d.dp(10)))
+            GlassButton(Modifier.size(d.dp(120), d.dp(76)), RoundedCornerShape(d.dp(20)),
                 onClick = { if (text.isNotEmpty()) { actions.text(text); text = "" } }) { Label("Enviar", 24) }
         }
 
@@ -643,35 +800,41 @@ private fun SectionTitle(title: String, subtitle: String? = null) {
 }
 
 @Composable
-private fun AppsTab(actions: RemoteActions) {
+private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
     val d = LocalDs.current
+    val fromTv = state.installedApps.isNotEmpty()
+    // Apps reported by the TV first; otherwise the common ones.
+    val apps = if (fromTv) state.installedApps else TvApps
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionTitle("Aplicaciones", "Abre una app instalada en tu televisor")
-        TvApps.chunked(2).forEach { pair ->
+        SectionTitle(
+            "Aplicaciones",
+            if (fromTv) "${apps.size} instaladas en tu TV · mantén pulsada para fijarla en el mando"
+            else "Mantén pulsada una app para fijarla en el mando"
+        )
+        apps.chunked(2).forEach { pair ->
             Row(Modifier.padding(horizontal = d.dp(46)).padding(bottom = d.dp(24)),
                 horizontalArrangement = Arrangement.spacedBy(d.dp(24))) {
                 pair.forEach { app ->
-                    GlassButton(Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
-                        description = "Abrir ${app.name}", onClick = { actions.launchApp(app.id) }) {
-                        when (app.name) {
-                            "Prime Video" -> BrandLogo("prime", 1.15f)
-                            "Disney+" -> BrandLogo("disney", 1.15f)
-                            "Netflix" -> BrandLogo("netflix", 1.15f)
-                            "YouTube" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(d.dp(52), d.dp(36)).background(Color(0xFFFF0000), RoundedCornerShape(d.dp(10))),
-                                    contentAlignment = Alignment.Center) { Icon("play", Modifier.size(d.dp(16))) }
-                                Spacer(Modifier.width(d.dp(8)))
-                                Text("YouTube", color = Ink, fontSize = d.sp(32), fontWeight = FontWeight.Bold, letterSpacing = d.sp(-1))
-                            }
-                            "Spotify" -> Text("Spotify", color = Color(0xFF1ED760), fontSize = d.sp(34), fontWeight = FontWeight.Bold)
-                            "Max" -> Text("max", color = Color(0xFF6E8BFF), fontSize = d.sp(40), fontWeight = FontWeight.Black, letterSpacing = d.sp(-1))
-                            else -> Text(app.name, color = Ink, fontSize = d.sp(30), fontWeight = FontWeight.SemiBold)
-                        }
+                    val pinned = state.pinnedApps.any { it.id == app.id }
+                    GlassButton(
+                        Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
+                        description = "Abrir ${app.name}",
+                        onLongClick = { actions.togglePin(app) },
+                        onClick = { actions.launchApp(app.id) }
+                    ) {
+                        BrandLogo(brandOf(app), 1.15f, app.name)
+                        if (pinned) Icon(
+                            "pin", Modifier.align(Alignment.TopEnd).padding(d.dp(16)).size(d.dp(22)), InkMuted
+                        )
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+        if (!fromTv) Label(
+            "Cuando la TV esté conectada se mostrará su lista de apps (si el modelo la comparte).",
+            20, InkMuted, Modifier.padding(start = d.dp(52), end = d.dp(52), bottom = d.dp(40))
+        )
     }
 }
 
@@ -711,12 +874,10 @@ private fun CastTab(actions: RemoteActions) {
 }
 
 @Composable
-private fun SettingsTab(
-    status: String, connected: Boolean, scanning: Boolean, tvs: List<SamsungTv>,
-    selectedTv: SamsungTv?, haptics: Boolean, actions: RemoteActions,
-    powerLog: List<String>, powerBusy: Boolean
-) {
+private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
     val d = LocalDs.current
+    val selectedTv = state.selectedTv
+    val connected = state.connected
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("Ajustes")
         Card {
@@ -728,11 +889,11 @@ private fun SettingsTab(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(d.dp(14)).background(if (connected) OnlineGreen else DotOff, CircleShape))
                 Spacer(Modifier.width(d.dp(10)))
-                Label(if (connected) "Conectado" else "Sin conexión", 22, Ink)
+                Label(if (connected) "Conectado" else if (state.connecting) "Conectando…" else "Sin conexión", 22, Ink)
             }
-            if (status.isNotBlank()) {
+            if (state.status.isNotBlank()) {
                 Spacer(Modifier.height(d.dp(10)))
-                Label(status, 21, InkMuted)
+                Label(state.status, 21, InkMuted)
             }
             if (selectedTv != null) {
                 Spacer(Modifier.height(d.dp(20)))
@@ -742,21 +903,121 @@ private fun SettingsTab(
                 }
             }
         }
-        Card { TvList(scanning, tvs, selectedTv, actions, onChosen = {}) }
-        if (selectedTv != null) Card { PowerLab(selectedTv, powerLog, powerBusy, actions) }
+        Card { TvList(state.scanning, state.tvs, selectedTv, actions, onChosen = {}) }
+        if (selectedTv != null) Card { PowerLab(selectedTv, state.powerLog, state.powerBusy, actions) }
+        Card { SmartThingsCard(state, actions) }
         Card {
-            Row(Modifier.fillMaxWidth().pressable { actions.setHaptics(!haptics) }, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Vibración al pulsar", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-                    Label("Respuesta háptica en cada botón", 21, InkMuted)
+            Text("Tema", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(d.dp(14)))
+            Row(horizontalArrangement = Arrangement.spacedBy(d.dp(12))) {
+                listOf("dark" to "Oscuro", "light" to "Claro", "system" to "Sistema").forEach { (value, label) ->
+                    Segment(label, state.theme == value, Modifier.weight(1f)) { actions.setTheme(value) }
                 }
-                Switch(haptics)
+            }
+            Spacer(Modifier.height(d.dp(26)))
+            ToggleRow("Vibración al pulsar", "Respuesta háptica en cada botón", state.haptics) { actions.setHaptics(it) }
+            Spacer(Modifier.height(d.dp(22)))
+            ToggleRow("Botones de volumen del móvil", "Suben y bajan el volumen de la TV con la app abierta", state.hardwareVolume) {
+                actions.setHardwareVolume(it)
             }
         }
+        Card { KeyTester(actions) }
         Label(
             "TvRemote · Samsung Smart TV (Tizen 2016+)\nEl móvil y el televisor deben estar en la misma Wi-Fi.",
             20, InkMuted.copy(alpha = .7f), Modifier.padding(start = d.dp(52), top = d.dp(4), bottom = d.dp(40))
         )
+    }
+}
+
+@Composable
+private fun ToggleRow(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    val d = LocalDs.current
+    Row(Modifier.fillMaxWidth().pressable(description = title) { onChange(!on) }, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Ink, fontSize = d.sp(26), fontWeight = FontWeight.Medium)
+            Label(subtitle, 20, InkMuted)
+        }
+        Spacer(Modifier.width(d.dp(14)))
+        Switch(on)
+    }
+}
+
+@Composable
+private fun Segment(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val d = LocalDs.current
+    val bg by animateColorAsState(if (selected) pal.pillTop else pal.fg.copy(.03f), label = "seg")
+    Box(
+        modifier.height(d.dp(70)).clip(RoundedCornerShape(d.dp(35))).background(bg)
+            .border(1.dp, pal.fg.copy(if (selected) .16f else .06f), RoundedCornerShape(d.dp(35)))
+            .pressable(description = label, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Label(label, 23, if (selected) Ink else InkMuted) }
+}
+
+@Composable
+private fun InputField(value: String, onChange: (String) -> Unit, hint: String, modifier: Modifier, mono: Boolean = false, onDone: () -> Unit = {}) {
+    val d = LocalDs.current
+    Box(
+        modifier.height(d.dp(76)).background(pal.fg.copy(.04f), RoundedCornerShape(d.dp(22)))
+            .border(1.dp, pal.fg.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        if (value.isEmpty()) Label(hint, 21, InkMuted)
+        BasicTextField(
+            value, onChange, singleLine = true,
+            textStyle = TextStyle(color = Ink, fontSize = d.sp(24), fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default),
+            cursorBrush = SolidColor(Ink),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onDone() }),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun SmartThingsCard(state: RemoteUiState, actions: RemoteActions) {
+    val d = LocalDs.current
+    var token by remember { mutableStateOf("") }
+    Text("Encender con SmartThings", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+    Label(
+        if (state.stConfigured) "Activo${state.stDevice?.let { " · ${it.name}" } ?: " · elige tu TV"}"
+        else "Para TVs que no despiertan por Wake-on-LAN. Crea un token en account.smartthings.com/tokens " +
+            "con permisos de dispositivos. Samsung hace que estos tokens caduquen en 24 h.",
+        20, InkMuted
+    )
+    Spacer(Modifier.height(d.dp(16)))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        InputField(token, { token = it }, if (state.stConfigured) "Nuevo token (vacío = quitar)" else "Token de SmartThings",
+            Modifier.weight(1f), mono = true) { actions.saveSmartThingsToken(token); token = "" }
+        Spacer(Modifier.width(d.dp(14)))
+        PillButton("Guardar", Modifier.width(d.dp(150))) { actions.saveSmartThingsToken(token); token = "" }
+    }
+    state.stDevices.forEach { dev ->
+        Spacer(Modifier.height(d.dp(12)))
+        val selected = state.stDevice?.id == dev.id
+        Segment(dev.name.ifBlank { dev.id.take(8) }, selected, Modifier.fillMaxWidth()) { actions.chooseSmartThingsDevice(dev) }
+    }
+}
+
+@Composable
+private fun KeyTester(actions: RemoteActions) {
+    val d = LocalDs.current
+    var key by remember { mutableStateOf("KEY_") }
+    Text("Probar teclas", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+    Label("Envía cualquier código para ver qué acepta tu modelo (p. ej. KEY_PLAY_BACK, KEY_AMBIENT).", 20, InkMuted)
+    Spacer(Modifier.height(d.dp(16)))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        InputField(key, { key = it.uppercase().replace(' ', '_') }, "KEY_…", Modifier.weight(1f), mono = true) {
+            if (key.length > 4) actions.key(key)
+        }
+        Spacer(Modifier.width(d.dp(14)))
+        PillButton("Enviar", Modifier.width(d.dp(150))) { if (key.length > 4) actions.key(key) }
+    }
+    Spacer(Modifier.height(d.dp(14)))
+    Row(horizontalArrangement = Arrangement.spacedBy(d.dp(10))) {
+        listOf("KEY_PLAY_BACK", "KEY_PAUSE", "KEY_PLAY").forEach { k ->
+            Segment(k.removePrefix("KEY_"), false, Modifier.weight(1f)) { actions.key(k) }
+        }
     }
 }
 
@@ -772,8 +1033,8 @@ private fun PowerLab(tv: SamsungTv, log: List<String>, busy: Boolean, actions: R
     Spacer(Modifier.height(d.dp(18)))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.weight(1f).height(d.dp(76)).background(Color.White.copy(.04f), RoundedCornerShape(d.dp(22)))
-                .border(1.dp, Color.White.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
+            Modifier.weight(1f).height(d.dp(76)).background(pal.fg.copy(.04f), RoundedCornerShape(d.dp(22)))
+                .border(1.dp, pal.fg.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
             contentAlignment = Alignment.CenterStart
         ) {
             if (mac.isEmpty()) Label("MAC de la TV (AA:BB:CC:DD:EE:FF)", 22, InkMuted)
@@ -798,7 +1059,7 @@ private fun PowerLab(tv: SamsungTv, log: List<String>, busy: Boolean, actions: R
     if (log.isNotEmpty()) {
         Spacer(Modifier.height(d.dp(18)))
         Column(
-            Modifier.fillMaxWidth().background(Color.Black.copy(.35f), RoundedCornerShape(d.dp(20)))
+            Modifier.fillMaxWidth().background(pal.fg.copy(if (pal.dark) .0f else .04f)).background(Color.Black.copy(if (pal.dark) .35f else 0f), RoundedCornerShape(d.dp(20)))
                 .padding(d.dp(18))
         ) {
             log.take(14).forEach {
@@ -828,8 +1089,8 @@ private fun Switch(on: Boolean) {
     val x by animateFloatAsState(if (on) 1f else 0f, label = "switch")
     Box(
         Modifier.size(d.dp(84), d.dp(48))
-            .background(if (on) Color(0xFF4A4C52) else Color(0xFF232427), CircleShape)
-            .border(1.dp, Color.White.copy(.10f), CircleShape).padding(d.dp(5))
+            .background(if (on) pal.switchOn else pal.switchOff, CircleShape)
+            .border(1.dp, pal.fg.copy(.10f), CircleShape).padding(d.dp(5))
     ) {
         Box(Modifier.offset(x = d.dp(36 * x)).size(d.dp(38)).background(if (on) Ink else InkMuted, CircleShape))
     }
@@ -853,8 +1114,8 @@ private fun TvList(
         val selected = selectedTv?.ip == tv.ip
         Row(
             Modifier.fillMaxWidth()
-                .background(if (selected) Color.White.copy(.07f) else Color.White.copy(.03f), RoundedCornerShape(d.dp(22)))
-                .border(1.dp, Color.White.copy(if (selected) .14f else .05f), RoundedCornerShape(d.dp(22)))
+                .background(if (selected) pal.fg.copy(.07f) else pal.fg.copy(.03f), RoundedCornerShape(d.dp(22)))
+                .border(1.dp, pal.fg.copy(if (selected) .14f else .05f), RoundedCornerShape(d.dp(22)))
                 .padding(d.dp(20)),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -883,8 +1144,8 @@ private fun TvPickerDialog(
     val d = LocalDs.current
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().background(Color(0xFF111214), RoundedCornerShape(d.dp(40)))
-                .border(1.dp, Color.White.copy(.10f), RoundedCornerShape(d.dp(40)))
+            Modifier.fillMaxWidth().background(pal.dialogBg, RoundedCornerShape(d.dp(40)))
+                .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(40)))
                 .padding(d.dp(36)).verticalScroll(rememberScrollState())
         ) {
             Text("Elegir televisor", color = Ink, fontSize = d.sp(36), fontWeight = FontWeight.Bold)
@@ -940,13 +1201,13 @@ private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
 
     Box(
         Modifier.at(d, 35, 1326, 623, 105)
-            .background(Brush.verticalGradient(listOf(Color(0xFF1B1C1F), NavBg)), shape)
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.14f), Color.White.copy(.04f))), shape)
+            .background(Brush.verticalGradient(listOf(pal.navTop, pal.navBg)), shape)
+            .border(1.dp, Brush.verticalGradient(listOf(pal.fg.copy(.14f), pal.fg.copy(.04f))), shape)
     ) {
         Box(
             Modifier.at(d, left, 16.5f, right - left, 72)
-                .background(Brush.verticalGradient(listOf(Color(0xFF36373C), Color(0xFF26272B))), CircleShape)
-                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.14f), Color.White.copy(.03f))), CircleShape)
+                .background(Brush.verticalGradient(listOf(pal.pillTop, pal.pillBottom)), CircleShape)
+                .border(1.dp, Brush.verticalGradient(listOf(pal.fg.copy(.14f), pal.fg.copy(.03f))), CircleShape)
         )
         listOf("remote", "apps", "cast", "settings").forEachIndexed { i, icon ->
             NavItem(icon, NavLabels[i], i == selected, Modifier.at(d, i * slot, 0, slot, 105)) { onSelect(i) }
@@ -1002,8 +1263,8 @@ private fun StatusToast(status: String, serial: Int) {
             Text(
                 status, color = Ink, fontSize = d.sp(21), textAlign = TextAlign.Center, maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.background(Color(0xFF1E1F22), RoundedCornerShape(d.dp(26)))
-                    .border(1.dp, Color.White.copy(.10f), RoundedCornerShape(d.dp(26)))
+                modifier = Modifier.background(pal.toastBg, RoundedCornerShape(d.dp(26)))
+                    .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(26)))
                     .padding(horizontal = d.dp(28), vertical = d.dp(14))
             )
         }
@@ -1021,11 +1282,12 @@ private fun Label(text: String, px: Number, color: Color = Ink, modifier: Modifi
 }
 
 /** Dark "glass" surface: lighter top, darker bottom, crisp highlight on the upper edge. */
-private fun Modifier.glass(shape: Shape, pressed: Boolean = false) =
+@Composable
+private fun Modifier.glass(shape: Shape, pressed: Boolean = false): Modifier =
     this.clip(shape)
-        .background(Brush.verticalGradient(listOf(SurfaceTop, SurfaceBottom)))
-        .background(if (pressed) Color.White.copy(.07f) else Color.Transparent)
-        .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.20f), Color.White.copy(.04f), Color.White.copy(.07f))), shape)
+        .background(Brush.verticalGradient(listOf(pal.surfaceTop, pal.surfaceBottom)))
+        .background(if (pressed) pal.fg.copy(.07f) else Color.Transparent)
+        .border(1.dp, Brush.verticalGradient(listOf(pal.fg.copy(.20f), pal.fg.copy(.04f), pal.fg.copy(.07f))), shape)
 
 /**
  * Fires on release (so swiping the pager never presses a key). With [repeat], holding the
@@ -1036,6 +1298,7 @@ private fun Modifier.pressable(
     repeat: Boolean = false,
     onPressedChange: (Boolean) -> Unit = {},
     description: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ): Modifier {
     val view = LocalView.current
@@ -1043,11 +1306,14 @@ private fun Modifier.pressable(
     val scope = rememberCoroutineScope()
     val click by rememberUpdatedState(onClick)
     val pressedCb by rememberUpdatedState(onPressedChange)
+    val longCb by rememberUpdatedState(onLongClick)
+    val hasLong = onLongClick != null
     return this.semantics {
         role = Role.Button
         if (description != null) contentDescription = description
-        onClick { click(); true }
-    }.pointerInput(repeat, haptics) {
+        semanticsClick { click(); true }
+        if (hasLong) semanticsLongClick { longCb?.invoke(); true }
+    }.pointerInput(repeat, haptics, hasLong) {
         awaitEachGesture {
             awaitFirstDown()
             pressedCb(true)
@@ -1055,6 +1321,11 @@ private fun Modifier.pressable(
             val job = if (repeat) scope.launch {
                 delay(420)
                 while (true) { fired = true; view.tick(haptics); click(); delay(120) }
+            } else if (hasLong) scope.launch {
+                delay(480)
+                fired = true
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                longCb?.invoke()
             } else null
             val up = waitForUpOrCancellation()
             job?.cancel()
@@ -1067,13 +1338,14 @@ private fun Modifier.pressable(
 @Composable
 private fun GlassButton(
     modifier: Modifier, shape: Shape, repeat: Boolean = false, description: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit, content: @Composable BoxScope.() -> Unit
 ) {
     var pressed by remember { mutableStateOf(false) }
     val k by animateFloatAsState(if (pressed) .96f else 1f, label = "press")
     Box(
         modifier.scale(k).glass(shape, pressed)
-            .pressable(repeat, onPressedChange = { pressed = it }, description = description, onClick = onClick),
+            .pressable(repeat, onPressedChange = { pressed = it }, description = description, onLongClick = onLongClick, onClick = onClick),
         contentAlignment = Alignment.Center, content = content
     )
 }
@@ -1084,9 +1356,9 @@ private fun RoundButton(modifier: Modifier, description: String, onClick: () -> 
     val k by animateFloatAsState(if (pressed) .94f else 1f, label = "press")
     Box(
         modifier.scale(k).clip(CircleShape)
-            .background(Brush.radialGradient(listOf(Color(0xFF26272A), Color(0xFF1A1B1D))))
-            .background(if (pressed) Color.White.copy(.08f) else Color.Transparent)
-            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.12f), Color.White.copy(.03f))), CircleShape)
+            .background(Brush.radialGradient(pal.round))
+            .background(if (pressed) pal.fg.copy(.08f) else Color.Transparent)
+            .border(1.dp, Brush.verticalGradient(listOf(pal.fg.copy(.12f), pal.fg.copy(.03f))), CircleShape)
             .pressable(onPressedChange = { pressed = it }, description = description, onClick = onClick),
         contentAlignment = Alignment.Center, content = content
     )
@@ -1104,6 +1376,7 @@ private fun PillButton(label: String, modifier: Modifier = Modifier, onClick: ()
 
 @Composable
 private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink) {
+    val holeColor = pal.navBg
     Canvas(modifier) {
         val w = size.width
         val h = size.height
@@ -1176,7 +1449,7 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
             "remote" -> {
                 val body = Size(w * .46f, h * .94f)
                 drawRoundRect(tint, p(.27f, .03f), body, CornerRadius(w * .12f))
-                val hole = Color(0xFF1C1D20)
+                val hole = holeColor
                 drawCircle(hole, m * .07f, p(.5f, .20f))
                 for (r in 0..2) for (c in 0..1) drawCircle(hole, m * .05f, p(.41f + c * .18f, .46f + r * .15f))
             }
@@ -1208,6 +1481,15 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 path.close()
                 drawPath(path, tint, style = stroke)
                 drawCircle(tint, m * .14f, c, style = stroke)
+            }
+            "pin" -> {
+                drawCircle(tint, m * .22f, p(.5f, .30f))
+                line(.5f, .50f, .5f, .94f)
+            }
+            "paste" -> {
+                drawRoundRect(tint, p(.18f, .16f), Size(w * .64f, h * .78f), CornerRadius(m * .08f), style = stroke)
+                drawRoundRect(tint, p(.34f, .06f), Size(w * .32f, h * .18f), CornerRadius(m * .05f))
+                line(.32f, .46f, .68f, .46f); line(.32f, .64f, .58f, .64f)
             }
             "touch" -> {
                 drawCircle(tint, m * .12f, p(.5f, .32f), style = stroke)

@@ -25,10 +25,14 @@ import java.util.concurrent.TimeUnit
  * both the trust manager and hostname verifier. A changed key is never accepted
  * silently: the user must forget the pairing and approve the TV again.
  */
+/** Name shown on the TV when it asks to allow this remote. */
+const val DEVICE_NAME = "TvRemote"
+
 class SamsungRemote(
     context: Context,
     private val onStatus: (String) -> Unit,
-    private val onConnectionChanged: (Boolean) -> Unit = {}
+    private val onConnectionChanged: (Boolean) -> Unit = {},
+    private val onInstalledApps: (List<TvApp>) -> Unit = {}
 ) {
     private val prefs = context.getSharedPreferences("samsung_tv_pairing", Context.MODE_PRIVATE)
     @Volatile private var socket: WebSocket? = null
@@ -39,7 +43,7 @@ class SamsungRemote(
 
     fun isConnected(): Boolean = connected
 
-    fun connect(ip: String, deviceName: String = "Reel TV Android") {
+    fun connect(ip: String, deviceName: String = DEVICE_NAME) {
         close()
         val host = ip.trim()
         if (host.isBlank() || host.any { it.isWhitespace() }) {
@@ -103,6 +107,16 @@ class SamsungRemote(
                         onStatus("Televisor emparejado y autorizado")
                     } else if (root.optString("event") == "ms.channel.connect") {
                         onStatus("Conectado al Samsung TV")
+                    } else if (root.optString("event") == "ed.installedApp.get") {
+                        val list = root.optJSONObject("data")?.optJSONArray("data")
+                        if (list != null) {
+                            val apps = (0 until list.length()).mapNotNull { i ->
+                                val o = list.optJSONObject(i) ?: return@mapNotNull null
+                                val id = o.optString("appId").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                TvApp(id, o.optString("name").ifBlank { id })
+                            }
+                            onInstalledApps(apps.sortedBy { it.name.lowercase() })
+                        }
                     } else if (root.optString("event") == "ms.channel.unauthorized") {
                         onStatus("El televisor rechazó la autorización. Vuelve a emparejarlo.")
                     }
@@ -219,6 +233,26 @@ class SamsungRemote(
             })
         }.toString()
         if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
+    }
+
+    /** Asks the TV for its installed apps; the answer arrives through onInstalledApps. */
+    fun requestInstalledApps() {
+        val payload = JSONObject().apply {
+            put("method", "ms.channel.emit")
+            put("params", JSONObject().apply {
+                put("event", "ed.installedApp.get")
+                put("to", "host")
+            })
+        }.toString()
+        socket?.send(payload)
+    }
+
+    /** The same TV moved to a new IP: keep its token and certificate pin. */
+    fun migratePairing(oldIp: String, newIp: String) {
+        val edit = prefs.edit()
+        prefs.getString("token_$oldIp", null)?.let { edit.putString("token_$newIp", it) }
+        prefs.getString("spki_$oldIp", null)?.let { edit.putString("spki_$newIp", it) }
+        edit.apply()
     }
 
     fun forgetPairing(ip: String) {

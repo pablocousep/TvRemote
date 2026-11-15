@@ -10,11 +10,28 @@
         android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".ActionReceiver" android:exported="false" />
+        <receiver android:name=".RemoteWidget" android:exported="false" android:label="TvRemote">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/remote_widget_info" />
+        </receiver>
+        <service
+            android:name=".PowerTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_w_power"
+            android:label="TV"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
