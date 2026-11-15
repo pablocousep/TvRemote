@@ -3,10 +3,30 @@ package com.reelog.tvremote
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -45,6 +65,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -94,6 +115,8 @@ private val LocalHaptics = staticCompositionLocalOf { true }
 
 private fun Modifier.at(d: Ds, x: Number, y: Number, w: Number, h: Number) =
     this.offset(d.dp(x), d.dp(y)).size(d.dp(w), d.dp(h))
+
+private fun Modifier.offset(shift: Offset) = this.offset(shift.x.dp, shift.y.dp)
 
 private fun View.tick(enabled: Boolean) {
     if (enabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -151,21 +174,34 @@ fun RemoteScreen(
             Box(Modifier.align(Alignment.Center).size(d.dp(DESIGN_W), d.dp(DESIGN_H))) {
                 Header(selectedTv, connected, actions, onPickTv = { showPicker = true })
 
-                when (tab) {
-                    0 -> {
-                        HorizontalPager(pager, Modifier.at(d, 0, 225, DESIGN_W, 1015)) { page ->
-                            when (page) {
-                                0 -> MainPage(actions)
-                                1 -> NumbersPage(actions)
-                                else -> TouchPage(actions)
+                AnimatedContent(
+                    targetState = tab,
+                    modifier = Modifier.at(d, 0, 225, DESIGN_W, 1085),
+                    transitionSpec = {
+                        val dir = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it / 6 * dir } +
+                            fadeIn(tween(260, delayMillis = 40))) togetherWith
+                            (slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it / 8 * dir } +
+                                fadeOut(tween(180)))
+                    },
+                    label = "tab"
+                ) { t ->
+                    Box(Modifier.fillMaxSize()) {
+                        when (t) {
+                            0 -> {
+                                HorizontalPager(pager, Modifier.fillMaxWidth().height(d.dp(1015))) { page ->
+                                    when (page) {
+                                        0 -> MainPage(actions)
+                                        1 -> NumbersPage(actions)
+                                        else -> TouchPage(actions)
+                                    }
+                                }
+                                PageDots(pager.currentPage, pager.currentPageOffsetFraction, top = 1032)
                             }
+                            1 -> AppsTab(actions)
+                            2 -> CastTab(actions)
+                            else -> SettingsTab(status, connected, scanning, tvs, selectedTv, haptics, actions)
                         }
-                        PageDots(pager.currentPage)
-                    }
-                    1 -> Box(Modifier.at(d, 0, 225, DESIGN_W, 1085)) { AppsTab(actions) }
-                    2 -> Box(Modifier.at(d, 0, 225, DESIGN_W, 1085)) { CastTab(actions) }
-                    else -> Box(Modifier.at(d, 0, 225, DESIGN_W, 1085)) {
-                        SettingsTab(status, connected, scanning, tvs, selectedTv, haptics, actions)
                     }
                 }
 
@@ -189,10 +225,10 @@ fun RemoteScreen(
 @Composable
 private fun Header(tv: SamsungTv?, connected: Boolean, actions: RemoteActions, onPickTv: () -> Unit) {
     val d = LocalDs.current
-    RoundButton(Modifier.at(d, 43, 93, 90, 90), onClick = actions.power) {
+    RoundButton(Modifier.at(d, 43, 93, 90, 90), "Encender o apagar", onClick = actions.power) {
         Icon("power", Modifier.size(d.dp(40)))
     }
-    RoundButton(Modifier.at(d, 561, 94, 88, 88), onClick = { actions.key("KEY_MUTE") }) {
+    RoundButton(Modifier.at(d, 561, 94, 88, 88), "Silenciar", onClick = { actions.key("KEY_MUTE") }) {
         Icon("speaker", Modifier.size(d.dp(46)))
     }
     Text(
@@ -206,7 +242,7 @@ private fun Header(tv: SamsungTv?, connected: Boolean, actions: RemoteActions, o
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
-            Modifier.clip(RoundedCornerShape(d.dp(17))).pressable(onClick = onPickTv)
+            Modifier.clip(RoundedCornerShape(d.dp(17))).pressable(description = "Elegir televisor", onClick = onPickTv)
                 .padding(horizontal = d.dp(10)),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -239,9 +275,9 @@ private fun MainPage(actions: RemoteActions) {
     val d = LocalDs.current
     var playing by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
-        BrandTile("prime", Modifier.at(d, 46, 16, 184, 100)) { actions.launchApp(TvApps[0].id) }
-        BrandTile("disney", Modifier.at(d, 254, 16, 184, 100)) { actions.launchApp(TvApps[1].id) }
-        BrandTile("netflix", Modifier.at(d, 462, 16, 184, 100)) { actions.launchApp(TvApps[2].id) }
+        BrandTile("prime", Modifier.at(d, 46, 16, 184, 100), "Abrir Prime Video") { actions.launchApp(TvApps[0].id) }
+        BrandTile("disney", Modifier.at(d, 254, 16, 184, 100), "Abrir Disney+") { actions.launchApp(TvApps[1].id) }
+        BrandTile("netflix", Modifier.at(d, 462, 16, 184, 100), "Abrir Netflix") { actions.launchApp(TvApps[2].id) }
 
         DPad(Modifier.at(d, 86, 161, 520, 520), actions.key)
 
@@ -250,19 +286,19 @@ private fun MainPage(actions: RemoteActions) {
         RockerPill(Modifier.at(d, 528, 706, 118, 285), "channel",
             onUp = { actions.key("KEY_CHUP") }, onDown = { actions.key("KEY_CHDOWN") })
 
-        GlassButton(Modifier.at(d, 186, 743, 92, 93), RoundedCornerShape(d.dp(24)), repeat = true,
+        GlassButton(Modifier.at(d, 186, 743, 92, 93), RoundedCornerShape(d.dp(24)), repeat = true, description = "Retroceder",
             onClick = { actions.key("KEY_REWIND") }) { SkipIcon(forward = false) }
-        GlassButton(Modifier.at(d, 300, 743, 92, 93), RoundedCornerShape(d.dp(24)),
+        GlassButton(Modifier.at(d, 300, 743, 92, 93), RoundedCornerShape(d.dp(24)), description = "Reproducir o pausar",
             onClick = {
                 actions.key(if (playing) "KEY_PAUSE" else "KEY_PLAY")
                 playing = !playing
             }) { Icon("playPause", Modifier.size(d.dp(44), d.dp(30))) }
-        GlassButton(Modifier.at(d, 414, 743, 92, 93), RoundedCornerShape(d.dp(24)), repeat = true,
+        GlassButton(Modifier.at(d, 414, 743, 92, 93), RoundedCornerShape(d.dp(24)), repeat = true, description = "Avanzar",
             onClick = { actions.key("KEY_FF") }) { SkipIcon(forward = true) }
 
-        GlassButton(Modifier.at(d, 192, 873, 143, 102), RoundedCornerShape(d.dp(26)),
+        GlassButton(Modifier.at(d, 192, 873, 143, 102), RoundedCornerShape(d.dp(26)), description = "Atrás",
             onClick = { actions.key("KEY_RETURN") }) { Icon("back", Modifier.size(d.dp(38), d.dp(32))) }
-        GlassButton(Modifier.at(d, 358, 873, 143, 102), RoundedCornerShape(d.dp(26)),
+        GlassButton(Modifier.at(d, 358, 873, 143, 102), RoundedCornerShape(d.dp(26)), description = "Inicio",
             onClick = { actions.key("KEY_HOME") }) { Icon("home", Modifier.size(d.dp(38))) }
     }
 }
@@ -285,8 +321,28 @@ private fun DPad(modifier: Modifier, onKey: (String) -> Unit) {
     val key by rememberUpdatedState(onKey)
     var pressed by remember { mutableStateOf<String?>(null) }
 
+    val nudge by animateFloatAsState(if (pressed != null && pressed != "KEY_ENTER") 1f else 0f,
+        spring(dampingRatio = .5f, stiffness = 700f), label = "nudge")
+    val okScale by animateFloatAsState(if (pressed == "KEY_ENTER") .95f else 1f,
+        spring(dampingRatio = .5f, stiffness = 700f), label = "ok")
+    val lastArrow = remember { mutableStateOf("KEY_UP") }
+    if (pressed != null && pressed != "KEY_ENTER") lastArrow.value = pressed!!
+    fun arrowShift(k: String): Offset {
+        if (lastArrow.value != k) return Offset.Zero
+        val n = nudge * 6f * d.s
+        return when (k) { "KEY_UP" -> Offset(0f, -n); "KEY_DOWN" -> Offset(0f, n); "KEY_LEFT" -> Offset(-n, 0f); else -> Offset(n, 0f) }
+    }
     Box(
-        modifier.pointerInput(Unit) {
+        modifier.semantics {
+            contentDescription = "Cruceta de navegación"
+            customActions = listOf(
+                CustomAccessibilityAction("Arriba") { key("KEY_UP"); true },
+                CustomAccessibilityAction("Abajo") { key("KEY_DOWN"); true },
+                CustomAccessibilityAction("Izquierda") { key("KEY_LEFT"); true },
+                CustomAccessibilityAction("Derecha") { key("KEY_RIGHT"); true },
+                CustomAccessibilityAction("OK") { key("KEY_ENTER"); true }
+            )
+        }.pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown()
                 val r = size.width / 2f
@@ -338,13 +394,13 @@ private fun DPad(modifier: Modifier, onKey: (String) -> Unit) {
                 ), r * .58f, center = Offset(center.x, center.y + r * .03f)
             )
         }
-        Icon("chevronUp", Modifier.align(Alignment.TopCenter).padding(top = d.dp(70)).size(d.dp(38), d.dp(20)))
-        Icon("chevronDown", Modifier.align(Alignment.BottomCenter).padding(bottom = d.dp(70)).size(d.dp(38), d.dp(20)))
-        Icon("chevronLeft", Modifier.align(Alignment.CenterStart).padding(start = d.dp(66)).size(d.dp(20), d.dp(38)))
-        Icon("chevronRight", Modifier.align(Alignment.CenterEnd).padding(end = d.dp(66)).size(d.dp(20), d.dp(38)))
+        Icon("chevronUp", Modifier.align(Alignment.TopCenter).padding(top = d.dp(70)).offset(arrowShift("KEY_UP")).size(d.dp(38), d.dp(20)))
+        Icon("chevronDown", Modifier.align(Alignment.BottomCenter).padding(bottom = d.dp(70)).offset(arrowShift("KEY_DOWN")).size(d.dp(38), d.dp(20)))
+        Icon("chevronLeft", Modifier.align(Alignment.CenterStart).padding(start = d.dp(66)).offset(arrowShift("KEY_LEFT")).size(d.dp(20), d.dp(38)))
+        Icon("chevronRight", Modifier.align(Alignment.CenterEnd).padding(end = d.dp(66)).offset(arrowShift("KEY_RIGHT")).size(d.dp(20), d.dp(38)))
 
         // Raised OK button.
-        Box(Modifier.size(d.dp(228)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(d.dp(228)).scale(okScale), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val r = size.minDimension / 2f
                 drawCircle(
@@ -374,7 +430,8 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
         Box(
             Modifier.fillMaxWidth().weight(1f)
                 .background(if (upPressed) Color.White.copy(.07f) else Color.Transparent)
-                .pressable(repeat = true, onPressedChange = { upPressed = it }, onClick = onUp),
+                .pressable(repeat = true, onPressedChange = { upPressed = it },
+                    description = if (kind == "volume") "Subir volumen" else "Canal siguiente", onClick = onUp),
             contentAlignment = Alignment.Center
         ) {
             if (kind == "volume") Icon("plus", Modifier.size(d.dp(36)))
@@ -387,7 +444,8 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
         Box(
             Modifier.fillMaxWidth().weight(1f)
                 .background(if (downPressed) Color.White.copy(.07f) else Color.Transparent)
-                .pressable(repeat = true, onPressedChange = { downPressed = it }, onClick = onDown),
+                .pressable(repeat = true, onPressedChange = { downPressed = it },
+                    description = if (kind == "volume") "Bajar volumen" else "Canal anterior", onClick = onDown),
             contentAlignment = Alignment.Center
         ) {
             if (kind == "volume") Icon("minus", Modifier.size(d.dp(36)))
@@ -397,50 +455,23 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
 }
 
 @Composable
-private fun BrandTile(brand: String, modifier: Modifier, onClick: () -> Unit) {
+private fun BrandTile(brand: String, modifier: Modifier, description: String, onClick: () -> Unit) {
     val d = LocalDs.current
-    GlassButton(modifier, RoundedCornerShape(d.dp(24)), onClick = onClick) { BrandLogo(brand, 1f) }
+    GlassButton(modifier, RoundedCornerShape(d.dp(24)), description = description, onClick = onClick) { BrandLogo(brand, 1f) }
 }
 
 @Composable
 private fun BrandLogo(brand: String, k: Float) {
     val d = LocalDs.current
     when (brand) {
-        "prime" -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "prime", color = PrimeBlue, fontSize = d.sp(40 * k), fontWeight = FontWeight.Bold,
-                letterSpacing = d.sp(-1 * k),
-                modifier = Modifier.offset(y = d.dp(4 * k))
-            )
-            Canvas(Modifier.size(d.dp(84 * k), d.dp(16 * k)).offset(y = d.dp(-4 * k))) {
-                val w = size.width; val h = size.height
-                val sw = 2.6f * d.s * k * density
-                val smile = Path().apply {
-                    moveTo(w * .04f, h * .12f)
-                    quadraticTo(w * .48f, h * 1.05f, w * .90f, h * .30f)
-                }
-                drawPath(smile, PrimeBlue, style = Stroke(sw, cap = StrokeCap.Round))
-                val head = Path().apply {
-                    moveTo(w * .80f, h * .18f); lineTo(w * .97f, h * .10f); lineTo(w * .93f, h * .62f)
-                }
-                drawPath(head, PrimeBlue, style = Stroke(sw, cap = StrokeCap.Round, join = StrokeJoin.Round))
-            }
-        }
-        "disney" -> Box(contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(d.dp(118 * k), d.dp(60 * k))) {
-                val sw = 2.2f * d.s * k * density
-                drawArc(
-                    Brush.horizontalGradient(listOf(Color(0xFF0E3B8C), Color(0xFF3FA8F4), Color(0xFFE6F6FF))),
-                    200f, 150f, false, Offset(size.width * .02f, size.height * .02f),
-                    Size(size.width * .96f, size.height * 1.3f), style = Stroke(sw, cap = StrokeCap.Round)
-                )
-            }
-            Text(
-                "Disney+", color = Ink, fontSize = d.sp(32 * k), fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Cursive, letterSpacing = d.sp(-0.5 * k),
-                modifier = Modifier.offset(y = d.dp(6 * k))
-            )
-        }
+        "prime" -> Image(
+            painterResource(R.drawable.logo_prime), contentDescription = "Prime Video",
+            modifier = Modifier.size(d.dp(90 * k), d.dp(43 * k)).offset(y = d.dp(3 * k))
+        )
+        "disney" -> Image(
+            painterResource(R.drawable.logo_disney_plus), contentDescription = "Disney+",
+            modifier = Modifier.size(d.dp(112 * k), d.dp(61 * k))
+        )
         "netflix" -> Text(
             "NETFLIX", color = NetflixRed, fontSize = d.sp(40 * k), fontWeight = FontWeight.Black,
             fontFamily = CondensedFont, letterSpacing = d.sp(-0.5 * k),
@@ -567,6 +598,7 @@ private fun TouchPage(actions: RemoteActions) {
         val row = listOf("stop" to "KEY_STOP", "back" to "KEY_RETURN", "home" to "KEY_HOME", "exit" to "KEY_EXIT")
         row.forEachIndexed { i, (icon, k) ->
             GlassButton(Modifier.at(d, 46 + i * 153, 776, 141, 96), RoundedCornerShape(d.dp(24)),
+                description = mapOf("stop" to "Detener", "back" to "Atrás", "home" to "Inicio", "exit" to "Salir")[icon],
                 onClick = { actions.key(k) }) {
                 if (icon == "exit") Label("Salir", 24) else Icon(icon, Modifier.size(d.dp(36)))
             }
@@ -600,7 +632,7 @@ private fun AppsTab(actions: RemoteActions) {
                 horizontalArrangement = Arrangement.spacedBy(d.dp(24))) {
                 pair.forEach { app ->
                     GlassButton(Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
-                        onClick = { actions.launchApp(app.id) }) {
+                        description = "Abrir ${app.name}", onClick = { actions.launchApp(app.id) }) {
                         when (app.name) {
                             "Prime Video" -> BrandLogo("prime", 1.15f)
                             "Disney+" -> BrandLogo("disney", 1.15f)
@@ -799,41 +831,84 @@ private fun TvPickerDialog(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun PageDots(current: Int) {
+private fun PageDots(current: Int, offset: Float, top: Number) {
     val d = LocalDs.current
+    // Position follows the finger while swiping between pages.
+    val pos = (current + offset).coerceIn(0f, 2f)
     repeat(3) { i ->
+        val near = (1f - abs(pos - i)).coerceIn(0f, 1f)
+        val color = lerp(DotOff, Ink, near)
         Box(
-            Modifier.at(d, 302 + i * 38.5f, 1257, 13, 13)
-                .background(if (i == current) Ink else DotOff, CircleShape)
+            Modifier.at(d, 302 + i * 38.5f, top, 13, 13)
+                .graphicsLayer { val k = .85f + .15f * near; scaleX = k; scaleY = k }
+                .background(color, CircleShape)
         )
     }
 }
+
+private val NavLabels = listOf("Mando", "Aplicaciones", "Transmitir", "Ajustes")
 
 @Composable
 private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
     val d = LocalDs.current
     val shape = RoundedCornerShape(d.dp(53))
+    val slot = 623f / 4f
+    val pillW = 133f
+    val targetLeft = selected * slot + (slot - pillW) / 2f
+    var previous by remember { mutableIntStateOf(selected) }
+    val movingRight = selected >= previous
+    SideEffect { previous = selected }
+    // Leading edge moves fast, trailing edge lags: the pill stretches like a drop of liquid.
+    val fast = spring<Float>(dampingRatio = .75f, stiffness = 520f)
+    val slow = spring<Float>(dampingRatio = .82f, stiffness = 210f)
+    val left by animateFloatAsState(targetLeft, if (movingRight) slow else fast, label = "pillL")
+    val right by animateFloatAsState(targetLeft + pillW, if (movingRight) fast else slow, label = "pillR")
+
     Box(
         Modifier.at(d, 35, 1326, 623, 105)
             .background(Brush.verticalGradient(listOf(Color(0xFF1B1C1F), NavBg)), shape)
             .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.14f), Color.White.copy(.04f))), shape)
     ) {
-        val icons = listOf("remote", "apps", "cast", "settings")
-        icons.forEachIndexed { i, icon ->
-            val slot = 623f / 4f
-            Box(
-                Modifier.at(d, i * slot, 0, slot, 105).pressable { onSelect(i) },
-                contentAlignment = Alignment.Center
-            ) {
-                if (i == selected) Box(
-                    Modifier.size(d.dp(133), d.dp(72))
-                        .background(Brush.verticalGradient(listOf(Color(0xFF34353A), Color(0xFF26272B))), CircleShape)
-                        .border(1.dp, Color.White.copy(.08f), CircleShape)
-                )
-                val iconSize = when (icon) { "remote" -> d.dp(34); "settings" -> d.dp(38); else -> d.dp(36) }
-                Icon(icon, Modifier.size(iconSize), if (i == selected) Ink else Ink.copy(alpha = .88f))
-            }
+        Box(
+            Modifier.at(d, left, 16.5f, right - left, 72)
+                .background(Brush.verticalGradient(listOf(Color(0xFF36373C), Color(0xFF26272B))), CircleShape)
+                .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.14f), Color.White.copy(.03f))), CircleShape)
+        )
+        listOf("remote", "apps", "cast", "settings").forEachIndexed { i, icon ->
+            NavItem(icon, NavLabels[i], i == selected, Modifier.at(d, i * slot, 0, slot, 105)) { onSelect(i) }
         }
+    }
+}
+
+@Composable
+private fun NavItem(icon: String, label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val d = LocalDs.current
+    var pressed by remember { mutableStateOf(false) }
+    val bounce = remember { Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            bounce.snapTo(.72f)
+            bounce.animateTo(1f, spring(dampingRatio = .38f, stiffness = 420f))
+        }
+    }
+    val pressScale by animateFloatAsState(if (pressed) .86f else 1f, spring(stiffness = 900f), label = "navPress")
+    val tint by animateColorAsState(if (selected) Ink else Ink.copy(alpha = .62f), tween(220), label = "navTint")
+    val lift by animateFloatAsState(if (selected) -2f else 0f, spring(dampingRatio = .5f), label = "navLift")
+    Box(
+        modifier.pressable(description = label, onPressedChange = { pressed = it }, onClick = onClick)
+            .semantics { this.selected = selected },
+        contentAlignment = Alignment.Center
+    ) {
+        val iconSize = when (icon) { "remote" -> d.dp(34); "settings" -> d.dp(38); else -> d.dp(36) }
+        Icon(
+            icon,
+            Modifier.size(iconSize).graphicsLayer {
+                val k = bounce.value * pressScale
+                scaleX = k; scaleY = k
+                translationY = lift * d.s * density
+            },
+            tint
+        )
     }
 }
 
@@ -886,6 +961,7 @@ private fun Modifier.glass(shape: Shape, pressed: Boolean = false) =
 private fun Modifier.pressable(
     repeat: Boolean = false,
     onPressedChange: (Boolean) -> Unit = {},
+    description: String? = null,
     onClick: () -> Unit
 ): Modifier {
     val view = LocalView.current
@@ -893,7 +969,11 @@ private fun Modifier.pressable(
     val scope = rememberCoroutineScope()
     val click by rememberUpdatedState(onClick)
     val pressedCb by rememberUpdatedState(onPressedChange)
-    return this.pointerInput(repeat, haptics) {
+    return this.semantics {
+        role = Role.Button
+        if (description != null) contentDescription = description
+        onClick { click(); true }
+    }.pointerInput(repeat, haptics) {
         awaitEachGesture {
             awaitFirstDown()
             pressedCb(true)
@@ -912,20 +992,20 @@ private fun Modifier.pressable(
 
 @Composable
 private fun GlassButton(
-    modifier: Modifier, shape: Shape, repeat: Boolean = false,
+    modifier: Modifier, shape: Shape, repeat: Boolean = false, description: String? = null,
     onClick: () -> Unit, content: @Composable BoxScope.() -> Unit
 ) {
     var pressed by remember { mutableStateOf(false) }
     val k by animateFloatAsState(if (pressed) .96f else 1f, label = "press")
     Box(
         modifier.scale(k).glass(shape, pressed)
-            .pressable(repeat, onPressedChange = { pressed = it }, onClick = onClick),
+            .pressable(repeat, onPressedChange = { pressed = it }, description = description, onClick = onClick),
         contentAlignment = Alignment.Center, content = content
     )
 }
 
 @Composable
-private fun RoundButton(modifier: Modifier, onClick: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+private fun RoundButton(modifier: Modifier, description: String, onClick: () -> Unit, content: @Composable BoxScope.() -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     val k by animateFloatAsState(if (pressed) .94f else 1f, label = "press")
     Box(
@@ -933,7 +1013,7 @@ private fun RoundButton(modifier: Modifier, onClick: () -> Unit, content: @Compo
             .background(Brush.radialGradient(listOf(Color(0xFF26272A), Color(0xFF1A1B1D))))
             .background(if (pressed) Color.White.copy(.08f) else Color.Transparent)
             .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(.12f), Color.White.copy(.03f))), CircleShape)
-            .pressable(onPressedChange = { pressed = it }, onClick = onClick),
+            .pressable(onPressedChange = { pressed = it }, description = description, onClick = onClick),
         contentAlignment = Alignment.Center, content = content
     )
 }

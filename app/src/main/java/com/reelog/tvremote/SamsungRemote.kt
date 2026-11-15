@@ -31,7 +31,7 @@ class SamsungRemote(
     private val onConnectionChanged: (Boolean) -> Unit = {}
 ) {
     private val prefs = context.getSharedPreferences("samsung_tv_pairing", Context.MODE_PRIVATE)
-    private var socket: WebSocket? = null
+    @Volatile private var socket: WebSocket? = null
     private var currentHost: String? = null
     private var client: OkHttpClient? = null
     private var token: String? = null
@@ -112,6 +112,12 @@ class SamsungRemote(
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) = Unit
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // The TV is closing (e.g. it was switched off): finish the handshake right away
+                // so onClosed fires and the UI shows the connection as down.
+                webSocket.close(1000, null)
+            }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (webSocket !== socket) return
