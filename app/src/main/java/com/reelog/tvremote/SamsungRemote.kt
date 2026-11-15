@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -17,7 +18,12 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Samsung Tizen remote transport.
- * Uses WSS/8002 and TOFU certificate pinning per TV/IP.
+ *
+ * Samsung TVs commonly expose a self-signed TLS certificate which may not contain
+ * the TV's IP address as a subject alternative name. We therefore use TOFU pinning
+ * of the leaf certificate public key, scoped to the TV IP, and verify that pin in
+ * both the trust manager and hostname verifier. A changed key is never accepted
+ * silently: the user must forget the pairing and approve the TV again.
  */
 class SamsungRemote(
     context: Context,
@@ -40,12 +46,29 @@ class SamsungRemote(
         token = prefs.getString("token_$host", null)
         onStatus("Conectando de forma segura a $host…")
 
-        val trustManager = pinnedTrustManager(host)
+        val pinKey = "spki_$host"
+        val trustManager = pinnedTrustManager(host, pinKey)
         val sslContext = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
         }
+        val hostnameVerifier = HostnameVerifier { requestedHost, session ->
+            if (!requestedHost.equals(host, ignoreCase = true)) {
+                false
+            } else {
+                try {
+                    val peer = session.peerCertificates.firstOrNull() as? X509Certificate
+                    val expected = prefs.getString(pinKey, null)
+                    peer != null && expected != null &&
+                        publicKeyFingerprint(peer).equals(expected, ignoreCase = true)
+                } catch (_: Exception) {
+                    false
+                }
+            }
+        }
+
         val okClient = OkHttpClient.Builder()
             .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .hostnameVerifier(hostnameVerifier)
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .pingInterval(25, TimeUnit.SECONDS)
@@ -59,7 +82,7 @@ class SamsungRemote(
 
         socket = okClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                onStatus("WebSocket seguro abierto. Acepta el acceso en la pantalla del televisor si aparece.")
+                onStatus("Conexión TLS verificada. Acepta el acceso en la pantalla del televisor si aparece.")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -85,9 +108,17 @@ class SamsungRemote(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socket = null
-                val message = if (t.message?.contains("certificate", true) == true || t.message?.contains("pin", true) == true)
-                    "Certificado del televisor distinto o no válido. Revisa el emparejamiento."
-                else "No se pudo conectar: ${t.localizedMessage ?: "error de red"}"
+                val causes = generateSequence(t as Throwable?) { it.cause }
+                    .mapNotNull { it.message }.joinToString(" | ")
+                val message = when {
+                    causes.contains("public key changed", true) ||
+                        causes.contains("pin mismatch", true) ->
+                        "La identidad segura de esta TV ha cambiado. Pulsa Olvidar y vuelve a emparejarla."
+                    causes.contains("certificate", true) || causes.contains("SSL", true) ||
+                        causes.contains("hostname", true) || causes.contains("peer", true) ->
+                        "No se pudo verificar el certificado TLS de la TV. Comprueba que sea tu televisor y vuelve a emparejarlo."
+                    else -> "No se pudo conectar: ${t.localizedMessage ?: "error de red"}"
+                }
                 onStatus(message)
             }
 
@@ -98,25 +129,36 @@ class SamsungRemote(
         })
     }
 
-    private fun pinnedTrustManager(host: String): X509TrustManager = object : X509TrustManager {
-        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-            throw java.security.cert.CertificateException("Client certificates are not accepted")
-        }
-        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-            if (chain.isNullOrEmpty()) throw java.security.cert.CertificateException("Empty certificate chain")
-            val digest = MessageDigest.getInstance("SHA-256").digest(chain[0].encoded)
-            val fingerprint = digest.joinToString("") { "%02X".format(it) }
-            val key = "cert_$host"
-            val known = prefs.getString(key, null)
-            if (known == null) {
-                prefs.edit().putString(key, fingerprint).apply()
-                onStatus("Certificado local guardado. Confirma el permiso en el televisor.")
-            } else if (!known.equals(fingerprint, ignoreCase = true)) {
-                throw java.security.cert.CertificateException("Samsung TV certificate fingerprint changed")
+    private fun publicKeyFingerprint(certificate: X509Certificate): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(certificate.publicKey.encoded)
+        return digest.joinToString("") { "%02X".format(it) }
+    }
+
+    private fun pinnedTrustManager(host: String, pinKey: String): X509TrustManager =
+        object : X509TrustManager {
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                throw java.security.cert.CertificateException("Client certificates are not accepted")
+            }
+
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+                if (chain.isNullOrEmpty()) {
+                    throw java.security.cert.CertificateException("Empty Samsung TV certificate chain")
+                }
+                val fingerprint = publicKeyFingerprint(chain[0])
+                val known = prefs.getString(pinKey, null)
+                if (known == null) {
+                    // Commit synchronously so the hostname verifier sees the pin in this handshake.
+                    if (!prefs.edit().putString(pinKey, fingerprint).commit()) {
+                        throw java.security.cert.CertificateException("Could not save Samsung TV public key pin")
+                    }
+                    onStatus("Identidad segura de la TV guardada. Confirma el permiso en el televisor.")
+                } else if (!known.equals(fingerprint, ignoreCase = true)) {
+                    throw java.security.cert.CertificateException("Samsung TV public key changed for $host")
+                }
             }
         }
-    }
 
     fun sendKey(key: String) {
         val payload = JSONObject().apply {
@@ -145,8 +187,13 @@ class SamsungRemote(
     }
 
     fun forgetPairing(ip: String) {
-        prefs.edit().remove("token_${ip.trim()}").remove("cert_${ip.trim()}").apply()
-        if (currentHost == ip.trim()) close()
+        val host = ip.trim()
+        prefs.edit()
+            .remove("token_$host")
+            .remove("cert_$host") // Remove legacy certificate pin from earlier builds.
+            .remove("spki_$host")
+            .commit()
+        if (currentHost == host) close()
         onStatus("Emparejamiento local eliminado. La próxima conexión pedirá autorización.")
     }
 
