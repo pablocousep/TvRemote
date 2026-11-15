@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.navigationBarColor = android.graphics.Color.rgb(5, 6, 7)
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
         val statusState = mutableStateOf("Busca televisores Samsung en tu red")
         val scanningState = mutableStateOf(false)
         val foundTvs = mutableStateListOf<SamsungTv>()
@@ -110,7 +112,7 @@ private fun RemoteHome(
     Surface(Modifier.fillMaxSize(), color = bg) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 42.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -144,7 +146,7 @@ private fun RemoteHome(
 
             Spacer(Modifier.height(18.dp))
             BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val dialSize = maxWidth * .82f
+                val dialSize = maxWidth * .80f
                 Box(Modifier.size(dialSize), contentAlignment = Alignment.Center) {
                     Box(
                         Modifier.fillMaxSize().background(
@@ -208,7 +210,7 @@ private fun RemoteHome(
             }
 
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(24.dp)).padding(vertical = 12.dp),
+            Row(Modifier.fillMaxWidth().height(70.dp).background(panel, RoundedCornerShape(36.dp)).border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(36.dp)).padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly) {
                 BottomItem("remote", "Mando", 0, selectedTab) { selectedTab = 0 }
                 BottomItem("apps", "Apps", 1, selectedTab) { selectedTab = 1 }
@@ -297,7 +299,7 @@ private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color 
 private fun AppTile(brand: String, modifier: Modifier = Modifier) {
     Surface(
         color = Color(0xFF202328), shape = RoundedCornerShape(22.dp),
-        modifier = modifier.height(72.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(22.dp))
+        modifier = modifier.height(58.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(22.dp))
     ) {
         Box(contentAlignment = Alignment.Center) {
             when (brand) {
@@ -330,7 +332,7 @@ private fun AppTile(brand: String, modifier: Modifier = Modifier) {
 private fun SideControl(kind: String, modifier: Modifier, onUp: () -> Unit, onDown: () -> Unit) {
     Surface(
         color = Color(0xFF202328), shape = RoundedCornerShape(25.dp),
-        modifier = modifier.height(176.dp)
+        modifier = modifier.height(158.dp)
             .border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(25.dp))
     ) {
         Column(Modifier.fillMaxSize().padding(vertical = 8.dp),
@@ -364,7 +366,7 @@ private fun TallControl(top: String, label: String, bottom: String, onPlus: () -
 private fun RemoteTile(symbol: String, caption: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         color = Color(0xFF202328), shape = RoundedCornerShape(21.dp),
-        modifier = modifier.height(76.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(21.dp))
+        modifier = modifier.height(52.dp).border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(21.dp))
             .clickable { onClick() }
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
