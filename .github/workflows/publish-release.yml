@@ -1,0 +1,52 @@
+name: Publish release (one-off)
+
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/workflows/publish-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TVREMOTE_BUILD_NUMBER: "49"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK packages
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk TvRemote-v0.3.49.apk
+          gh release create v0.3.49 TvRemote-v0.3.49.apk --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --latest \
+            --title "TvRemote v0.3.49" \
+            --notes "$(cat <<'NOTES'
+          - Logos oficiales de Prime Video, Disney+, Netflix, YouTube, Spotify, Apple TV+ y Max; el resto de apps usa el icono de la propia TV.
+          - Encendido mejorado: Wake-on-LAN repetido, comprobación del estado de la TV y encendido por SmartThings (opcional).
+          - Pruebas de encendido con registro, probador de teclas y MAC editable en Ajustes.
+          - Botones de volumen del móvil, widget de pantalla de inicio y botón en Ajustes rápidos.
+          - Lista de apps instaladas en la TV y accesos directos configurables (mantén pulsada una app).
+          - Pegar texto en la TV, tema oscuro/claro/sistema, aviso de conexión perdida.
+          - Si la TV cambia de IP, la app la vuelve a encontrar por su MAC.
+          - La TV pedirá autorizar de nuevo la app (ahora se llama "TvRemote").
+
+          APK de depuración.
+          NOTES
+          )"

@@ -7,7 +7,7 @@ plugins {
 // Release signing comes from the environment (GitHub secrets in CI). Without it the
 // release build is produced unsigned and CI publishes the debug APK instead.
 val keystorePath: String? = System.getenv("TVREMOTE_KEYSTORE")
-val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+val buildNumber = (System.getenv("TVREMOTE_BUILD_NUMBER") ?: System.getenv("GITHUB_RUN_NUMBER"))?.toIntOrNull() ?: 1
 
 android {
     namespace = "com.reelog.tvremote"
