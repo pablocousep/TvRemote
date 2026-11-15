@@ -129,3 +129,156 @@ private fun RemoteHome(
                     Text("⌄", color = muted, style = MaterialTheme.typography.titleLarge)
                 }
             }
+
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppTile("prime", Color(0xFF19A8E0), Modifier.weight(1f))
+                AppTile("Disney+", white, Modifier.weight(1f))
+                AppTile("NETFLIX", Color(0xFFE53945), Modifier.weight(1f))
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(2.dp), contentAlignment = Alignment.Center) {
+                Surface(color = panelLight, shape = CircleShape, modifier = Modifier.fillMaxSize()) {}
+                Surface(color = panelInner, shape = CircleShape, modifier = Modifier.fillMaxSize(0.46f)) {}
+                Text("⌃", color = muted, style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp)
+                        .clickable { onKey("KEY_UP") })
+                Text("‹", color = muted, style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 25.dp)
+                        .clickable { onKey("KEY_LEFT") })
+                Text("›", color = muted, style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 25.dp)
+                        .clickable { onKey("KEY_RIGHT") })
+                Text("⌄", color = muted, style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp)
+                        .clickable { onKey("KEY_DOWN") })
+                Text("OK", color = white, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.Center).clickable { onKey("KEY_ENTER") }
+                        .padding(35.dp))
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                TallControl("＋", "VOL", "－", onPlus = { onKey("KEY_VOLUP") },
+                    onMinus = { onKey("KEY_VOLDOWN") }, modifier = Modifier.weight(0.82f))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RemoteTile("⟲", "10", Modifier.weight(1f)) { onKey("KEY_REWIND") }
+                        RemoteTile("▶Ⅱ", "", Modifier.weight(1f)) { onKey("KEY_PLAY") }
+                        RemoteTile("⟳", "10", Modifier.weight(1f)) { onKey("KEY_FF") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RemoteTile("←", "", Modifier.weight(1f)) { onKey("KEY_RETURN") }
+                        RemoteTile("⌂", "", Modifier.weight(1f)) { onKey("KEY_HOME") }
+                    }
+                }
+                TallControl("⌃", "CH", "⌄", onPlus = { onKey("KEY_CHUP") },
+                    onMinus = { onKey("KEY_CHDOWN") }, modifier = Modifier.weight(0.82f))
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(3) { i ->
+                    Box(Modifier.size(9.dp).background(if (selectedTab == i) white else Color(0xFF526568), CircleShape))
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(24.dp)).padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly) {
+                BottomItem("▣", "Mando", 0, selectedTab) { selectedTab = 0 }
+                BottomItem("▦", "Apps", 1, selectedTab) { selectedTab = 1 }
+                BottomItem("◔", "Transmitir", 2, selectedTab) { selectedTab = 2 }
+                BottomItem("⚙", "Ajustes", 3, selectedTab) { selectedTab = 3 }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    if (showDevices) {
+        AlertDialog(
+            onDismissRequest = { showDevices = false },
+            containerColor = panel,
+            title = { Text("Televisores Samsung") },
+            text = {
+                Column {
+                    Text(status, color = muted, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    if (tvs.isEmpty()) Text("Busca televisores conectados a tu misma Wi-Fi.")
+                    tvs.forEach { tv ->
+                        TvChoice(tv, selectedTv?.ip == tv.ip,
+                            onConnect = { selectedTv = tv; onConnect(tv); showDevices = false },
+                            onForget = { onForget(tv) })
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDiscover) { Text(if (scanning) "Buscando…" else "Buscar") } },
+            dismissButton = { TextButton(onClick = { showDevices = false }) { Text("Cerrar") } }
+        )
+    }
+}
+
+@Composable
+private fun AppTile(name: String, tint: Color, modifier: Modifier = Modifier) {
+    Surface(color = panelLight, shape = RoundedCornerShape(20.dp), modifier = modifier.height(72.dp)) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(name, color = tint, fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun TallControl(top: String, label: String, bottom: String, onPlus: () -> Unit,
+                        onMinus: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(color = panelLight, shape = RoundedCornerShape(22.dp), modifier = modifier.height(170.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+            Text(top, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable { onPlus() })
+            Text(label, color = white, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            Text(bottom, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable { onMinus() })
+        }
+    }
+}
+
+@Composable
+private fun RemoteTile(symbol: String, caption: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(color = panelLight, shape = RoundedCornerShape(20.dp),
+        modifier = modifier.height(88.dp).clickable { onClick() }) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text(symbol, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            if (caption.isNotEmpty()) Text(caption, color = muted, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun BottomItem(icon: String, label: String, index: Int, selected: Int, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }.padding(horizontal = 5.dp)) {
+        Text(icon, color = if (selected == index) white else muted, style = MaterialTheme.typography.titleLarge)
+        Text(label, color = if (selected == index) white else muted, style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun TvChoice(tv: SamsungTv, selected: Boolean, onConnect: () -> Unit, onForget: () -> Unit) {
+    Surface(color = if (selected) panelLight else panelInner,
+        shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(tv.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(tv.model, color = muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(tv.ip, color = muted, style = MaterialTheme.typography.labelSmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Button(onClick = onConnect, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)) {
+                    Text("Conectar")
+                }
+                TextButton(onClick = onForget) { Text("Olvidar") }
+            }
+        }
+    }
+}
