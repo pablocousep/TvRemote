@@ -27,7 +27,8 @@ import java.util.concurrent.TimeUnit
  */
 class SamsungRemote(
     context: Context,
-    private val onStatus: (String) -> Unit
+    private val onStatus: (String) -> Unit,
+    private val onConnectionChanged: (Boolean) -> Unit = {}
 ) {
     private val prefs = context.getSharedPreferences("samsung_tv_pairing", Context.MODE_PRIVATE)
     private var socket: WebSocket? = null
@@ -85,7 +86,9 @@ class SamsungRemote(
 
         socket = okClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (webSocket !== socket) return
                 connected = true
+                onConnectionChanged(true)
                 onStatus("Conexión TLS verificada. Acepta el acceso en la pantalla del televisor si aparece.")
             }
 
@@ -111,8 +114,10 @@ class SamsungRemote(
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) = Unit
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (webSocket !== socket) return
                 connected = false
                 socket = null
+                onConnectionChanged(false)
                 val causes = generateSequence(t as Throwable?) { it.cause }
                     .mapNotNull { it.message }.joinToString(" | ")
                 val message = when {
@@ -128,8 +133,10 @@ class SamsungRemote(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (webSocket !== socket) return
                 connected = false
                 socket = null
+                onConnectionChanged(false)
                 onStatus("Conexión cerrada")
             }
         })
@@ -192,6 +199,22 @@ class SamsungRemote(
         if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
     }
 
+    /** Launches an installed Tizen app (Netflix, Prime Video…) by its Samsung app id. */
+    fun launchApp(appId: String) {
+        val payload = JSONObject().apply {
+            put("method", "ms.channel.emit")
+            put("params", JSONObject().apply {
+                put("event", "ed.apps.launch")
+                put("to", "host")
+                put("data", JSONObject().apply {
+                    put("appId", appId)
+                    put("action_type", "DEEP_LINK")
+                })
+            })
+        }.toString()
+        if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
+    }
+
     fun forgetPairing(ip: String) {
         val host = ip.trim()
         prefs.edit()
@@ -204,9 +227,12 @@ class SamsungRemote(
     }
 
     fun close() {
+        val wasConnected = connected
         connected = false
-        socket?.close(1000, "User disconnected")
+        val old = socket
         socket = null
+        old?.close(1000, "User disconnected")
+        if (wasConnected) onConnectionChanged(false)
         client?.dispatcher?.executorService?.shutdown()
         client = null
     }
