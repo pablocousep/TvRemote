@@ -26,7 +26,8 @@ import java.util.concurrent.TimeUnit
 data class SamsungTv(
     val ip: String,
     val name: String,
-    val model: String
+    val model: String,
+    val macAddress: String? = null
 )
 
 class SamsungTvDiscovery(private val context: Context) {
@@ -161,8 +162,12 @@ class SamsungTvDiscovery(private val context: Context) {
                 val model = device.optString("modelName").takeIf { it.isNotBlank() && it != "null" }
                     ?: device.optString("model").takeIf { it.isNotBlank() && it != "null" }
                     ?: "Modelo no disponible"
+                val mac = sequenceOf("wifiMac", "macAddress", "ethernetMac", "wiredMac")
+                    .mapNotNull { key -> device.optString(key).takeIf { it.isNotBlank() && it != "null" } }
+                    .firstOrNull()?.uppercase()
+                    ?.takeIf { it.matches(Regex("([0-9A-F]{2}:){5}[0-9A-F]{2}")) }
                 if (!type.contains("Samsung", true) && !description.contains("Samsung", true) && !name.contains("Samsung", true)) return null
-                SamsungTv(ip, name, model)
+                SamsungTv(ip, name, model, mac)
             } finally {
                 connection.disconnect()
             }
