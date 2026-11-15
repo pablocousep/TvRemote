@@ -3,18 +3,21 @@ package com.reelog.tvremote
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 private val bg = Color(0xFF0B0D10)
 private val card = Color(0xFF171B21)
@@ -24,13 +27,18 @@ private val muted = Color(0xFF9AA4B2)
 
 class MainActivity : ComponentActivity() {
     private lateinit var remote: SamsungRemote
+    private lateinit var discovery: SamsungTvDiscovery
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val statusState = mutableStateOf("Listo para conectar")
+        val statusState = mutableStateOf("Busca televisores Samsung en tu red")
+        val scanningState = mutableStateOf(false)
+        val foundTvs = mutableStateListOf<SamsungTv>()
         remote = SamsungRemote(applicationContext) { message ->
             runOnUiThread { statusState.value = message }
         }
+        discovery = SamsungTvDiscovery(applicationContext)
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = accent, onPrimary = Color(0xFF11150A),
@@ -40,10 +48,33 @@ class MainActivity : ComponentActivity() {
             )) {
                 RemoteHome(
                     status = statusState.value,
-                    onConnect = { remote.connect(it) },
+                    tvs = foundTvs,
+                    scanning = scanningState.value,
+                    onDiscover = {
+                        if (!scanningState.value) {
+                            scanningState.value = true
+                            statusState.value = "Buscando televisores en tu red local…"
+                            lifecycleScope.launch {
+                                try {
+                                    foundTvs.clear()
+                                    foundTvs.addAll(discovery.discover())
+                                    statusState.value = if (foundTvs.isEmpty()) {
+                                        "No se encontraron televisores. Comprueba que estén encendidos y en la misma Wi-Fi."
+                                    } else {
+                                        "${foundTvs.size} televisor(es) encontrado(s)"
+                                    }
+                                } catch (e: Exception) {
+                                    statusState.value = "Error al buscar: ${e.localizedMessage ?: "red no disponible"}"
+                                } finally {
+                                    scanningState.value = false
+                                }
+                            }
+                        }
+                    },
+                    onConnect = { remote.connect(it.ip) },
                     onKey = { remote.sendKey(it) },
                     onText = { remote.sendText(it) },
-                    onForget = { remote.forgetPairing(it) },
+                    onForget = { remote.forgetPairing(it.ip) },
                     onDisconnect = { remote.close() }
                 )
             }
@@ -59,18 +90,20 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RemoteHome(
     status: String,
-    onConnect: (String) -> Unit,
+    tvs: SnapshotStateList<SamsungTv>,
+    scanning: Boolean,
+    onDiscover: () -> Unit,
+    onConnect: (SamsungTv) -> Unit,
     onKey: (String) -> Unit,
     onText: (String) -> Unit,
-    onForget: (String) -> Unit,
+    onForget: (SamsungTv) -> Unit,
     onDisconnect: () -> Unit
 ) {
-    var ip by remember { mutableStateOf("") }
     var typedText by remember { mutableStateOf("") }
 
     Surface(Modifier.fillMaxSize(), color = bg) {
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -92,30 +125,49 @@ private fun RemoteHome(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Tu televisor Samsung", fontWeight = FontWeight.SemiBold)
+                            Text("Televisores disponibles", fontWeight = FontWeight.SemiBold)
                             Text(status, color = muted, style = MaterialTheme.typography.bodySmall)
                         }
                         Surface(color = Color(0xFF26351C), shape = CircleShape) {
-                            Text("LOCAL", color = accent, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
+                            Text("LAN", color = accent, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                     Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = ip, onValueChange = { ip = it },
+                    Button(
+                        onClick = onDiscover,
+                        enabled = !scanning,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Dirección IP del televisor") },
-                        placeholder = { Text("192.168.1.50") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         shape = RoundedCornerShape(14.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onConnect(ip.trim()) }, enabled = ip.isNotBlank(), modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
-                            Text("Conectar")
+                    ) {
+                        if (scanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.Black,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("Buscando televisores…")
+                        } else {
+                            Text(if (tvs.isEmpty()) "Buscar televisores" else "Volver a buscar")
                         }
-                        OutlinedButton(onClick = onDisconnect, shape = RoundedCornerShape(14.dp)) { Text("Parar") }
-                        TextButton(onClick = { onForget(ip) }, enabled = ip.isNotBlank()) { Text("Olvidar") }
+                    }
+                    if (tvs.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        tvs.forEach { tv ->
+                            TvChoice(
+                                tv = tv,
+                                onConnect = { onConnect(tv) },
+                                onForget = { onForget(tv) }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    } else if (!scanning) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Asegúrate de que el móvil y la TV estén conectados a la misma red. La primera vez tendrás que aceptar el permiso en la pantalla del televisor.",
+                            color = muted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
@@ -172,8 +224,35 @@ private fun RemoteHome(
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Desconectar") }
+            Spacer(Modifier.height(12.dp))
             Text("Conexión local cifrada · Sin anuncios · Sin cuenta", color = muted, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun TvChoice(tv: SamsungTv, onConnect: () -> Unit, onForget: () -> Unit) {
+    Surface(color = card2, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(color = Color(0xFF303B2A), shape = RoundedCornerShape(12.dp), modifier = Modifier.size(42.dp)) {
+                Box(contentAlignment = Alignment.Center) { Text("TV", color = accent, fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(tv.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(tv.model, color = muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                Text(tv.ip, color = muted, style = MaterialTheme.typography.labelSmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Button(onClick = onConnect, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                    Text("Usar")
+                }
+                TextButton(onClick = onForget, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                    Text("Olvidar", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
     }
 }
