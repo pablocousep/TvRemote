@@ -816,7 +816,6 @@ private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
             Row(Modifier.padding(horizontal = d.dp(46)).padding(bottom = d.dp(24)),
                 horizontalArrangement = Arrangement.spacedBy(d.dp(24))) {
                 pair.forEach { app ->
-                    val pinned = state.pinnedApps.any { it.id == app.id }
                     GlassButton(
                         Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
                         description = "Abrir ${app.name}",
@@ -824,9 +823,6 @@ private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
                         onClick = { actions.launchApp(app.id) }
                     ) {
                         AppLogo(app, 1.15f)
-                        if (pinned) Icon(
-                            "pin", Modifier.align(Alignment.TopEnd).padding(d.dp(16)).size(d.dp(22)), InkMuted
-                        )
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -1482,10 +1478,6 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 path.close()
                 drawPath(path, tint, style = stroke)
                 drawCircle(tint, m * .14f, c, style = stroke)
-            }
-            "pin" -> {
-                drawCircle(tint, m * .22f, p(.5f, .30f))
-                line(.5f, .50f, .5f, .94f)
             }
             "paste" -> {
                 drawRoundRect(tint, p(.18f, .16f), Size(w * .64f, h * .78f), CornerRadius(m * .08f), style = stroke)
