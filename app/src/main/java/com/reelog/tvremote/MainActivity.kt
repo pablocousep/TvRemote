@@ -138,7 +138,7 @@ private fun RemoteHome(
     var showDevices by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
 
-    LaunchedEffect(selectedTv?.ip) {
+    LaunchedEffect(Unit) {
         selectedTv?.let { onConnect(it) }
     }
 
@@ -270,6 +270,7 @@ private fun RemoteHome(
                                 selectedTv = tv
                                 tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
                                     .putString("model", tv.model).putString("mac", tv.macAddress).apply()
+                                onConnect(tv)
                                 showDevices = false
                             },
                             onForget = { onForget(tv) })
