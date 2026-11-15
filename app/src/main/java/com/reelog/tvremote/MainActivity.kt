@@ -143,20 +143,41 @@ private fun RemoteHome(
             }
 
             Spacer(Modifier.height(18.dp))
-            Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(2.dp), contentAlignment = Alignment.Center) {
-                Surface(color = panelLight, shape = CircleShape, modifier = Modifier.fillMaxSize()) {}
-                Surface(color = panelInner, shape = CircleShape, modifier = Modifier.fillMaxSize(0.46f)) {}
-                RemoteIcon("up", Modifier.align(Alignment.TopCenter).padding(top = 22.dp).size(25.dp)
-                    .clickable { onKey("KEY_UP") }, white)
-                RemoteIcon("left", Modifier.align(Alignment.CenterStart).padding(start = 25.dp).size(25.dp)
-                    .clickable { onKey("KEY_LEFT") }, white)
-                RemoteIcon("right", Modifier.align(Alignment.CenterEnd).padding(end = 25.dp).size(25.dp)
-                    .clickable { onKey("KEY_RIGHT") }, white)
-                RemoteIcon("down", Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp).size(25.dp)
-                    .clickable { onKey("KEY_DOWN") }, white)
-                Text("OK", color = white, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.Center).clickable { onKey("KEY_ENTER") }
-                        .padding(35.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                val dialSize = maxWidth * .82f
+                Box(Modifier.size(dialSize), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.radialGradient(listOf(Color(0xFF34373C), Color(0xFF25282D), Color(0xFF1B1D22))),
+                            CircleShape
+                        ).border(1.dp, Color.White.copy(alpha = .10f), CircleShape)
+                    )
+                    Box(
+                        Modifier.fillMaxSize(.46f).background(
+                            Brush.radialGradient(listOf(Color(0xFF303338), Color(0xFF1B1D22))), CircleShape
+                        ).border(1.dp, Color.White.copy(alpha = .10f), CircleShape)
+                    )
+                    Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(dialSize * .32f)
+                        .clickable { onKey("KEY_UP") }, contentAlignment = Alignment.Center) {
+                        RemoteIcon("up", Modifier.size(25.dp), white)
+                    }
+                    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dialSize * .32f)
+                        .clickable { onKey("KEY_DOWN") }, contentAlignment = Alignment.Center) {
+                        RemoteIcon("down", Modifier.size(25.dp), white)
+                    }
+                    Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(dialSize * .32f)
+                        .clickable { onKey("KEY_LEFT") }, contentAlignment = Alignment.Center) {
+                        RemoteIcon("left", Modifier.size(25.dp), white)
+                    }
+                    Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(dialSize * .32f)
+                        .clickable { onKey("KEY_RIGHT") }, contentAlignment = Alignment.Center) {
+                        RemoteIcon("right", Modifier.size(25.dp), white)
+                    }
+                    Box(Modifier.fillMaxSize(.46f).clickable { onKey("KEY_ENTER") },
+                        contentAlignment = Alignment.Center) {
+                        Text("OK", color = white, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -356,7 +377,7 @@ private fun RemoteTile(symbol: String, caption: String, modifier: Modifier = Mod
 @Composable
 private fun BottomItem(icon: String, label: String, index: Int, selected: Int, onClick: () -> Unit) {
     Box(
-        Modifier.weight(1f).fillMaxHeight()
+        Modifier.fillMaxWidth(.25f).fillMaxHeight()
             .background(if (selected == index) Color(0xFF34383E) else Color.Transparent, CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
