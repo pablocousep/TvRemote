@@ -34,6 +34,9 @@ class SamsungRemote(
     private var currentHost: String? = null
     private var client: OkHttpClient? = null
     private var token: String? = null
+    @Volatile private var connected = false
+
+    fun isConnected(): Boolean = connected
 
     fun connect(ip: String, deviceName: String = "Reel TV Android") {
         close()
@@ -82,6 +85,7 @@ class SamsungRemote(
 
         socket = okClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                connected = true
                 onStatus("Conexión TLS verificada. Acepta el acceso en la pantalla del televisor si aparece.")
             }
 
@@ -107,6 +111,7 @@ class SamsungRemote(
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) = Unit
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                connected = false
                 socket = null
                 val causes = generateSequence(t as Throwable?) { it.cause }
                     .mapNotNull { it.message }.joinToString(" | ")
@@ -123,6 +128,7 @@ class SamsungRemote(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                connected = false
                 socket = null
                 onStatus("Conexión cerrada")
             }
@@ -198,6 +204,7 @@ class SamsungRemote(
     }
 
     fun close() {
+        connected = false
         socket?.close(1000, "User disconnected")
         socket = null
         client?.dispatcher?.executorService?.shutdown()
