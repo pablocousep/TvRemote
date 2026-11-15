@@ -262,10 +262,10 @@ private fun RemoteIcon(kind: String, modifier: Modifier = Modifier, tint: Color 
                 if(kind=="rewind"){ line(.18f,.12f,.18f,.36f); line(.18f,.12f,.42f,.12f) }
                 else { line(.82f,.88f,.82f,.64f); line(.82f,.88f,.58f,.88f) }
             }
-            "remote" -> { drawRoundRect(tint,Offset(w*.25f,h*.08f),Size(w*.5f,h*.84f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw*2),style=stroke); drawCircle(tint,w*.5f,h*.30f,w*.045f) }
+            "remote" -> { drawRoundRect(tint,Offset(w*.25f,h*.08f),Size(w*.5f,h*.84f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw*2),style=stroke); drawCircle(tint,w*.045f,Offset(w*.5f,h*.30f)) }
             "apps" -> { for (x in 0..1) for(y in 0..1) drawRoundRect(tint,Offset(w*(.12f+x*.42f),h*(.12f+y*.42f)),Size(w*.32f,h*.32f),cornerRadius=androidx.compose.ui.geometry.CornerRadius(sw),style=stroke) }
-            "cast" -> { drawArc(tint,180f,90f,false,Offset(w*.10f,h*.10f),Size(w*.80f,h*.80f),style=stroke); drawArc(tint,180f,90f,false,Offset(w*.10f,h*.42f),Size(w*.48f,h*.48f),style=stroke); drawCircle(tint,w*.18f,h*.82f,w*.07f) }
-            "settings" -> { drawCircle(tint,w*.5f,h*.5f,w*.30f,style=stroke); drawCircle(tint,w*.5f,h*.5f,w*.10f) }
+            "cast" -> { drawArc(tint,180f,90f,false,Offset(w*.10f,h*.10f),Size(w*.80f,h*.80f),style=stroke); drawArc(tint,180f,90f,false,Offset(w*.10f,h*.42f),Size(w*.48f,h*.48f),style=stroke); drawCircle(tint,w*.07f,Offset(w*.18f,h*.82f)) }
+            "settings" -> { drawCircle(tint,w*.30f,Offset(w*.5f,h*.5f),style=stroke); drawCircle(tint,w*.10f,Offset(w*.5f,h*.5f)) }
         }
     }
 }
