@@ -1,6 +1,7 @@
 package com.reelog.tvremote
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
@@ -22,10 +23,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-private val bg = Color(0xFF14292B)
-private val panel = Color(0xFF263B3D)
-private val panelLight = Color(0xFF34494B)
-private val panelInner = Color(0xFF304547)
+private val bg = Color(0xFF101E1F)
+private val panel = Color(0xFF1C2D2F)
+private val panelLight = Color(0xFF2A4042)
+private val panelInner = Color(0xFF233638)
 private val accent = Color(0xFF43C879)
 private val muted = Color(0xFF9EADAC)
 private val white = Color(0xFFF5F7F6)
@@ -36,6 +37,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.navigationBarColor = android.graphics.Color.rgb(16, 30, 31)
         val statusState = mutableStateOf("Busca televisores Samsung en tu red")
         val scanningState = mutableStateOf(false)
         val foundTvs = mutableStateListOf<SamsungTv>()
@@ -120,7 +123,7 @@ private fun RemoteHome(
                     modifier = Modifier.clickable { onKey("KEY_MUTE") }.padding(5.dp))
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AppTile("prime", Color(0xFF19A8E0), Modifier.weight(1f))
                 AppTile("Disney+", white, Modifier.weight(1f))
@@ -128,9 +131,9 @@ private fun RemoteHome(
             }
 
             Spacer(Modifier.height(28.dp))
-            Box(Modifier.size(300.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(4.dp), contentAlignment = Alignment.Center) {
                 Surface(color = panelLight, shape = CircleShape, modifier = Modifier.fillMaxSize()) {}
-                Surface(color = panelInner, shape = CircleShape, modifier = Modifier.size(140.dp)) {}
+                Surface(color = panelInner, shape = CircleShape, modifier = Modifier.fillMaxSize(0.46f)) {}
                 Text("⌃", color = muted, style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp)
                         .clickable { onKey("KEY_UP") })
