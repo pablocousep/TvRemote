@@ -113,54 +113,47 @@ private fun RemoteHome(
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("⏻", color = accent, style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.clickable { onKey("KEY_POWER") }.padding(5.dp))
-                Spacer(Modifier.weight(1f))
-                Text("TvRemote", style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold, color = white)
-                Spacer(Modifier.weight(1f))
-                Text("◖))", color = white, style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.clickable { onKey("KEY_MUTE") }.padding(5.dp))
-            }
-            Spacer(Modifier.height(12.dp))
-            Surface(color = panel, shape = CircleShape,
-                modifier = Modifier.fillMaxWidth().clickable { showDevices = true }) {
-                Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("▣", color = muted, style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.width(12.dp))
-                    Box(Modifier.size(8.dp).background(if (selectedTv != null) Color(0xFF55D69A) else muted, CircleShape))
-                    Spacer(Modifier.width(12.dp))
-                    Text(selectedTv?.model ?: "Seleccionar televisor", color = white,
-                        modifier = Modifier.weight(1f), maxLines = 1)
-                    Text("⌄", color = muted, style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(42.dp).clickable { onKey("KEY_POWER") }, contentAlignment = Alignment.Center) {
+                    RemoteIcon("power", Modifier.size(27.dp), white)
                 }
+                Spacer(Modifier.weight(1f))
+                Text("TvRemote", color = white, fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                    letterSpacing = (-.7).sp)
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.size(42.dp).clickable { onKey("KEY_MUTE") }, contentAlignment = Alignment.Center) {
+                    RemoteIcon("volume", Modifier.size(30.dp), white)
+                }
+            }
+            Row(Modifier.fillMaxWidth().height(30.dp).clickable { showDevices = true },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                RemoteIcon("tv", Modifier.size(19.dp), muted)
+                Spacer(Modifier.width(9.dp))
+                Text(selectedTv?.model ?: "Seleccionar televisor", color = white,
+                    fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                Spacer(Modifier.width(8.dp))
+                RemoteIcon("down", Modifier.size(14.dp), muted)
             }
 
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AppTile("prime", Color(0xFF19A8E0), Modifier.weight(1f))
-                AppTile("Disney+", white, Modifier.weight(1f))
-                AppTile("NETFLIX", Color(0xFFE53945), Modifier.weight(1f))
+                AppTile("prime", Modifier.weight(1f))
+                AppTile("disney", Modifier.weight(1f))
+                AppTile("netflix", Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(18.dp))
             Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(2.dp), contentAlignment = Alignment.Center) {
                 Surface(color = panelLight, shape = CircleShape, modifier = Modifier.fillMaxSize()) {}
                 Surface(color = panelInner, shape = CircleShape, modifier = Modifier.fillMaxSize(0.46f)) {}
-                Text("⌃", color = muted, style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 22.dp)
-                        .clickable { onKey("KEY_UP") })
-                Text("‹", color = muted, style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 25.dp)
-                        .clickable { onKey("KEY_LEFT") })
-                Text("›", color = muted, style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 25.dp)
-                        .clickable { onKey("KEY_RIGHT") })
-                Text("⌄", color = muted, style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp)
-                        .clickable { onKey("KEY_DOWN") })
+                RemoteIcon("up", Modifier.align(Alignment.TopCenter).padding(top = 22.dp).size(25.dp)
+                    .clickable { onKey("KEY_UP") }, white)
+                RemoteIcon("left", Modifier.align(Alignment.CenterStart).padding(start = 25.dp).size(25.dp)
+                    .clickable { onKey("KEY_LEFT") }, white)
+                RemoteIcon("right", Modifier.align(Alignment.CenterEnd).padding(end = 25.dp).size(25.dp)
+                    .clickable { onKey("KEY_RIGHT") }, white)
+                RemoteIcon("down", Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp).size(25.dp)
+                    .clickable { onKey("KEY_DOWN") }, white)
                 Text("OK", color = white, fontWeight = FontWeight.Bold,
                     modifier = Modifier.align(Alignment.Center).clickable { onKey("KEY_ENTER") }
                         .padding(35.dp))
@@ -173,13 +166,13 @@ private fun RemoteHome(
                     onMinus = { onKey("KEY_VOLDOWN") }, modifier = Modifier.weight(0.82f))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        RemoteTile("⟲", "10", Modifier.weight(1f)) { onKey("KEY_REWIND") }
-                        RemoteTile("▶Ⅱ", "", Modifier.weight(1f)) { onKey("KEY_PLAY") }
-                        RemoteTile("⟳", "10", Modifier.weight(1f)) { onKey("KEY_FF") }
+                        RemoteTile("rewind", "10", Modifier.weight(1f)) { onKey("KEY_REWIND") }
+                        RemoteTile("playpause", "", Modifier.weight(1f)) { onKey("KEY_PLAY") }
+                        RemoteTile("forward", "10", Modifier.weight(1f)) { onKey("KEY_FF") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        RemoteTile("←", "", Modifier.weight(1f)) { onKey("KEY_RETURN") }
-                        RemoteTile("⌂", "", Modifier.weight(1f)) { onKey("KEY_HOME") }
+                        RemoteTile("back", "", Modifier.weight(1f)) { onKey("KEY_RETURN") }
+                        RemoteTile("home", "", Modifier.weight(1f)) { onKey("KEY_HOME") }
                     }
                 }
                 TallControl("⌃", "CH", "⌄", onPlus = { onKey("KEY_CHUP") },
