@@ -83,6 +83,21 @@ class MainActivity : ComponentActivity() {
                     },
                     onConnect = { remote.connect(it.ip) },
                     onKey = { remote.sendKey(it) },
+                    onPower = { tv ->
+                        if (remote.isConnected()) {
+                            remote.sendKey("KEY_POWER")
+                        } else if (tv?.macAddress != null) {
+                            statusState.value = "Enviando señal para encender el televisor…"
+                            lifecycleScope.launch {
+                                val result = WakeOnLan.wake(tv.macAddress)
+                                statusState.value = if (result.isSuccess)
+                                    "Señal Wake-on-LAN enviada. Si no enciende, activa Encendido por red en el televisor."
+                                else "No se pudo enviar la señal: " + (result.exceptionOrNull()?.localizedMessage ?: "error de red")
+                            }
+                        } else {
+                            statusState.value = "Conecta la TV encendida una vez para guardar su dirección MAC y poder despertarla."
+                        }
+                    },
                     onText = { remote.sendText(it) },
                     onForget = { remote.forgetPairing(it.ip) },
                     onDisconnect = { remote.close() }
@@ -101,11 +116,25 @@ class MainActivity : ComponentActivity() {
 private fun RemoteHome(
     status: String, tvs: SnapshotStateList<SamsungTv>, scanning: Boolean,
     onDiscover: () -> Unit, onConnect: (SamsungTv) -> Unit,
-    onKey: (String) -> Unit, onText: (String) -> Unit,
-    onForget: (SamsungTv) -> Unit, onDisconnect: () -> Unit
+    onKey: (String) -> Unit, onPower: (SamsungTv?) -> Unit,
+    onText: (String) -> Unit, onForget: (SamsungTv) -> Unit,
+    onDisconnect: () -> Unit
 ) {
     var typedText by remember { mutableStateOf("") }
-    var selectedTv by remember { mutableStateOf<SamsungTv?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val tvPrefs = remember { context.getSharedPreferences("tvremote_selected_tv", android.content.Context.MODE_PRIVATE) }
+    var selectedTv by remember {
+        mutableStateOf(
+            tvPrefs.getString("ip", null)?.let { ip ->
+                SamsungTv(
+                    ip,
+                    tvPrefs.getString("name", "Samsung Smart TV") ?: "Samsung Smart TV",
+                    tvPrefs.getString("model", "Modelo no disponible") ?: "Modelo no disponible",
+                    tvPrefs.getString("mac", null)
+                )
+            }
+        )
+    }
     var showDevices by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
 
@@ -116,7 +145,7 @@ private fun RemoteHome(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(Modifier.fillMaxWidth().height(46.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(42.dp).clickable { onKey("KEY_POWER") }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(42.dp).clickable { onPower(selectedTv) }, contentAlignment = Alignment.Center) {
                     RemoteIcon("power", Modifier.size(27.dp), white)
                 }
                 Spacer(Modifier.weight(1f))
@@ -233,7 +262,13 @@ private fun RemoteHome(
                     if (tvs.isEmpty()) Text("Busca televisores conectados a tu misma Wi-Fi.")
                     tvs.forEach { tv ->
                         TvChoice(tv, selectedTv?.ip == tv.ip,
-                            onConnect = { selectedTv = tv; onConnect(tv); showDevices = false },
+                            onConnect = {
+                                selectedTv = tv
+                                tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
+                                    .putString("model", tv.model).putString("mac", tv.macAddress).apply()
+                                onConnect(tv)
+                                showDevices = false
+                            },
                             onForget = { onForget(tv) })
                     }
                 }
