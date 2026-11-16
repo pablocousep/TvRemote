@@ -52,7 +52,7 @@ class SamsungTvDiscovery(private val context: Context) {
         return try {
             File("/proc/net/arp").useLines { lines ->
                 lines.drop(1).mapNotNull { line ->
-                    val columns = line.trim().split(Regex("\\\\s+"))
+                    val columns = line.trim().split(Regex("\\s+"))
                     if (columns.size < 4 || columns[0] != ip) return@mapNotNull null
                     val mac = columns[3].uppercase()
                     mac.takeIf { it != "00:00:00:00:00:00" && it.matches(validMac) }
