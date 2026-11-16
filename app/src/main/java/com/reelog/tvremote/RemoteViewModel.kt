@@ -12,9 +12,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** Holds the remote's state so it survives configuration changes. */
 class RemoteViewModel(app: Application) : AndroidViewModel(app) {
@@ -25,7 +22,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val connected = mutableStateOf(false)
     val connecting = mutableStateOf(false)
     val connectionLost = mutableStateOf(false)
-    /** The TV is off/asleep but can be woken (Wake-on-LAN MAC or SmartThings configured). */
+    /** The TV is off/asleep but can be woken with Wake-on-LAN (its MAC is known). */
     val tvAsleep = mutableStateOf(false)
     val savedTvs = mutableStateListOf<SavedTv>().apply { addAll(store.savedTvs) }
     val scanning = mutableStateOf(false)
@@ -34,15 +31,11 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val haptics = mutableStateOf(store.haptics)
     val hardwareVolume = mutableStateOf(store.hardwareVolume)
     val theme = mutableStateOf(store.theme)
-    val powerLog = mutableStateListOf<String>()
     val powerBusy = mutableStateOf(false)
     val installedApps = mutableStateListOf<TvApp>()
     /** Icons sent by the TV itself, by app id. */
     val appIcons = mutableStateMapOf<String, ImageBitmap>()
     val pinnedApps = mutableStateListOf<TvApp>().apply { addAll(store.pinnedApps) }
-    val stConfigured = mutableStateOf(store.smartThingsToken != null)
-    val stDevice = mutableStateOf(store.smartThingsDevice)
-    val stDevices = mutableStateListOf<StDevice>()
 
     val versionName: String = Updater.currentVersionName(app)
     val update = mutableStateOf<UpdateInfo?>(null)
@@ -83,7 +76,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** True when a switched-off TV can be woken, so "no connection" is not an error. */
-    private fun canWake() = selectedTv.value?.macAddress != null || (stConfigured.value && stDevice.value != null)
+    private fun canWake() = selectedTv.value?.macAddress != null
 
     /** Connection errors are expected while the TV sleeps; keep them in the log instead. */
     private fun onRemoteStatus(msg: String) {
@@ -143,9 +136,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun log(line: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        powerLog.add(0, "$time  $line")
-        while (powerLog.size > 60) powerLog.removeAt(powerLog.lastIndex)
+        android.util.Log.d("TvRemote", line)
     }
 
     // --- Remote keys -------------------------------------------------------------------------
@@ -250,84 +241,10 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         powerJob { session.power() }
     }
 
-    fun probeTv() {
-        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
-        powerJob {
-            log("Comprobando ${tv.ip}…")
-            val p = WakeOnLan.probe(tv.ip, 1500)
-            if (p.reachable) {
-                log("Responde · estado: ${p.powerState ?: "no informado"} · red: ${p.networkType ?: "?"} · MAC: ${p.mac ?: "?"}")
-                if (p.mac != null && !p.mac.equals(tv.macAddress, true)) saveMac(p.mac)
-            } else {
-                log("No responde (apagada del todo, en reposo profundo o con otra IP)")
-            }
-            val token = store.smartThingsToken
-            val dev = store.smartThingsDevice
-            if (token != null && dev != null) {
-                SmartThings.switchState(token, dev.id)
-                    .onSuccess { log("SmartThings dice: ${it ?: "?"}") }
-                    .onFailure { log("SmartThings: ${it.localizedMessage}") }
-            }
-        }
-    }
-
-    fun wakeTest() {
-        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
-        val mac = tv.macAddress ?: return setStatus("No hay MAC guardada")
-        powerJob {
-            log("Prueba Wake-on-LAN → $mac")
-            WakeOnLan.wakeAndWait(getApplication(), mac, tv.ip, log = ::log)
-        }
-    }
-
-    fun saveMac(input: String) {
-        val tv = selectedTv.value ?: return setStatus("Elige primero un televisor")
-        val mac = WakeOnLan.normalizeMac(input) ?: return setStatus("MAC no válida. Formato: AA:BB:CC:DD:EE:FF")
-        val updated = tv.copy(macAddress = mac)
-        store.selectedTv = updated
-        selectedTv.value = updated
-        log("MAC guardada: $mac")
-    }
-
-    fun clearLog() = powerLog.clear()
-
-    // --- SmartThings --------------------------------------------------------------------------
-
-    fun saveSmartThingsToken(token: String) {
-        val clean = token.trim()
-        if (clean.isEmpty()) {
-            store.smartThingsToken = null
-            store.smartThingsDevice = null
-            stConfigured.value = false
-            stDevice.value = null
-            stDevices.clear()
-            setStatus("SmartThings desactivado")
-            return
-        }
-        store.smartThingsToken = clean
-        stConfigured.value = true
-        viewModelScope.launch {
-            setStatus("Consultando SmartThings…")
-            SmartThings.listTvs(clean)
-                .onSuccess { list ->
-                    stDevices.clear(); stDevices.addAll(list)
-                    if (list.size == 1) chooseSmartThingsDevice(list[0])
-                    setStatus(if (list.isEmpty()) "No hay televisores en tu cuenta SmartThings" else "Elige tu televisor de SmartThings")
-                }
-                .onFailure { setStatus("SmartThings: ${it.localizedMessage}") }
-        }
-    }
-
-    fun chooseSmartThingsDevice(device: StDevice) {
-        store.smartThingsDevice = device
-        stDevice.value = device
-        log("SmartThings: usaré ${device.name}")
-    }
 
     // --- Preferences --------------------------------------------------------------------------
 
     fun setHaptics(on: Boolean) { haptics.value = on; store.haptics = on }
-    fun setHardwareVolume(on: Boolean) { hardwareVolume.value = on; store.hardwareVolume = on }
     fun setTheme(value: String) { theme.value = value; store.theme = value }
 
     fun togglePin(app: TvApp) {

@@ -196,16 +196,9 @@ class RemoteActions(
     val disconnect: () -> Unit,
     val openCastSettings: () -> Unit,
     val setHaptics: (Boolean) -> Unit,
-    val probeTv: () -> Unit = {},
-    val wakeTest: () -> Unit = {},
-    val saveMac: (String) -> Unit = {},
-    val clearLog: () -> Unit = {},
     val reconnect: () -> Unit = {},
     val togglePin: (TvApp) -> Unit = {},
-    val setHardwareVolume: (Boolean) -> Unit = {},
     val setTheme: (String) -> Unit = {},
-    val saveSmartThingsToken: (String) -> Unit = {},
-    val chooseSmartThingsDevice: (StDevice) -> Unit = {},
     val checkForUpdates: () -> Unit = {},
     val startUpdate: () -> Unit = {},
     val dismissUpdate: () -> Unit = {},
@@ -223,15 +216,10 @@ data class RemoteUiState(
     val tvs: List<SamsungTv> = emptyList(),
     val selectedTv: SamsungTv? = null,
     val haptics: Boolean = true,
-    val hardwareVolume: Boolean = true,
     val theme: String = "dark",
-    val powerLog: List<String> = emptyList(),
     val powerBusy: Boolean = false,
     val installedApps: List<TvApp> = emptyList(),
     val pinnedApps: List<TvApp> = TvApps.take(3),
-    val stConfigured: Boolean = false,
-    val stDevice: StDevice? = null,
-    val stDevices: List<StDevice> = emptyList(),
     val appIcons: Map<String, ImageBitmap> = emptyMap(),
     val versionName: String = "",
     val update: UpdateInfo? = null,
@@ -894,43 +882,9 @@ private fun CastTab(actions: RemoteActions) {
 @Composable
 private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
     val d = LocalDs.current
-    val selectedTv = state.selectedTv
-    val connected = state.connected
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("Ajustes")
-        Card {
-            Label("Televisor", 22, InkMuted)
-            Spacer(Modifier.height(d.dp(10)))
-            Text(selectedTv?.name ?: "Ninguno seleccionado", color = Ink, fontSize = d.sp(30), fontWeight = FontWeight.SemiBold)
-            if (selectedTv != null) Label("${selectedTv.model} · ${selectedTv.ip}", 22, InkMuted)
-            Spacer(Modifier.height(d.dp(12)))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(d.dp(14)).background(if (connected) OnlineGreen else DotOff, CircleShape))
-                Spacer(Modifier.width(d.dp(10)))
-                Label(
-                    when {
-                        connected -> "Conectado"
-                        state.connecting -> "Conectando…"
-                        state.tvAsleep -> "En reposo · pulsa encender para despertarla"
-                        else -> "Sin conexión"
-                    }, 22, Ink
-                )
-            }
-            if (state.status.isNotBlank()) {
-                Spacer(Modifier.height(d.dp(10)))
-                Label(state.status, 21, InkMuted)
-            }
-            if (selectedTv != null) {
-                Spacer(Modifier.height(d.dp(20)))
-                Row(horizontalArrangement = Arrangement.spacedBy(d.dp(18))) {
-                    PillButton(if (connected) "Reconectar" else "Conectar", Modifier.weight(1f)) { actions.connect(selectedTv) }
-                    PillButton("Desconectar", Modifier.weight(1f), onClick = actions.disconnect)
-                }
-            }
-        }
-        Card { TvList(state.scanning, state.tvs, state.savedTvs, selectedTv, actions, onChosen = {}) }
-        if (selectedTv != null) Card { PowerLab(selectedTv, state.powerLog, state.powerBusy, actions) }
-        Card { SmartThingsCard(state, actions) }
+        Card { TvList(state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = {}) }
         Card {
             Text("Tema", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(d.dp(14)))
@@ -939,32 +893,13 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                     Segment(label, state.theme == value, Modifier.weight(1f)) { actions.setTheme(value) }
                 }
             }
-            Spacer(Modifier.height(d.dp(26)))
-            ToggleRow("Vibración al pulsar", "Respuesta háptica en cada botón", state.haptics) { actions.setHaptics(it) }
-            Spacer(Modifier.height(d.dp(22)))
-            ToggleRow("Botones de volumen del móvil", "Suben y bajan el volumen de la TV con la app abierta", state.hardwareVolume) {
-                actions.setHardwareVolume(it)
-            }
         }
-        Card { UpdatesCard(state, actions) }
-        Card { KeyTester(actions) }
-        Label(
-            "TvRemote · Samsung Smart TV (Tizen 2016+)\nEl móvil y el televisor deben estar en la misma Wi-Fi.",
-            20, InkMuted.copy(alpha = .7f), Modifier.padding(start = d.dp(52), top = d.dp(4), bottom = d.dp(40))
+        Text(
+            "TvRemote ${state.versionName}" + if (state.updateChecking) " · comprobando…" else " · buscar actualizaciones",
+            color = InkMuted.copy(alpha = .7f), fontSize = d.sp(20),
+            modifier = Modifier.padding(start = d.dp(46), top = d.dp(4), bottom = d.dp(40))
+                .pressable(description = "Buscar actualizaciones", onClick = actions.checkForUpdates).padding(d.dp(6))
         )
-    }
-}
-
-@Composable
-private fun ToggleRow(title: String, subtitle: String, on: Boolean, onChange: (Boolean) -> Unit) {
-    val d = LocalDs.current
-    Row(Modifier.fillMaxWidth().pressable(description = title) { onChange(!on) }, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Ink, fontSize = d.sp(26), fontWeight = FontWeight.Medium)
-            Label(subtitle, 20, InkMuted)
-        }
-        Spacer(Modifier.width(d.dp(14)))
-        Switch(on)
     }
 }
 
@@ -978,71 +913,6 @@ private fun Segment(label: String, selected: Boolean, modifier: Modifier, onClic
             .pressable(description = label, onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Label(label, 23, if (selected) Ink else InkMuted) }
-}
-
-@Composable
-private fun InputField(value: String, onChange: (String) -> Unit, hint: String, modifier: Modifier, mono: Boolean = false, onDone: () -> Unit = {}) {
-    val d = LocalDs.current
-    Box(
-        modifier.height(d.dp(76)).background(pal.fg.copy(.04f), RoundedCornerShape(d.dp(22)))
-            .border(1.dp, pal.fg.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        if (value.isEmpty()) Label(hint, 21, InkMuted)
-        BasicTextField(
-            value, onChange, singleLine = true,
-            textStyle = TextStyle(color = Ink, fontSize = d.sp(24), fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default),
-            cursorBrush = SolidColor(Ink),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onDone() }),
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-
-@Composable
-private fun SmartThingsCard(state: RemoteUiState, actions: RemoteActions) {
-    val d = LocalDs.current
-    var token by remember { mutableStateOf("") }
-    Text("Encender con SmartThings", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-    Label(
-        if (state.stConfigured) "Activo${state.stDevice?.let { " · ${it.name}" } ?: " · elige tu TV"}"
-        else "Para TVs que no despiertan por Wake-on-LAN. Crea un token en account.smartthings.com/tokens " +
-            "con permisos de dispositivos. Samsung hace que estos tokens caduquen en 24 h.",
-        20, InkMuted
-    )
-    Spacer(Modifier.height(d.dp(16)))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        InputField(token, { token = it }, if (state.stConfigured) "Nuevo token (vacío = quitar)" else "Token de SmartThings",
-            Modifier.weight(1f), mono = true) { actions.saveSmartThingsToken(token); token = "" }
-        Spacer(Modifier.width(d.dp(14)))
-        PillButton("Guardar", Modifier.width(d.dp(150))) { actions.saveSmartThingsToken(token); token = "" }
-    }
-    state.stDevices.forEach { dev ->
-        Spacer(Modifier.height(d.dp(12)))
-        val selected = state.stDevice?.id == dev.id
-        Segment(dev.name.ifBlank { dev.id.take(8) }, selected, Modifier.fillMaxWidth()) { actions.chooseSmartThingsDevice(dev) }
-    }
-}
-
-@Composable
-private fun UpdatesCard(state: RemoteUiState, actions: RemoteActions) {
-    val d = LocalDs.current
-    val update = state.update
-    Text("Actualizaciones", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-    Label(
-        "Versión instalada: ${state.versionName}" + (update?.let { " · disponible ${it.tag}" } ?: ""),
-        20, if (update != null) Ink else InkMuted
-    )
-    Spacer(Modifier.height(d.dp(16)))
-    if (state.updateProgress != null) {
-        UpdateProgress(state.updateProgress)
-    } else if (update != null) {
-        PillButton("Actualizar a ${update.tag}", Modifier.fillMaxWidth(), onClick = actions.startUpdate)
-    } else {
-        PillButton(if (state.updateChecking) "Comprobando…" else "Buscar actualizaciones", Modifier.fillMaxWidth(),
-            onClick = actions.checkForUpdates)
-    }
 }
 
 @Composable
@@ -1092,80 +962,6 @@ private fun UpdateDialog(update: UpdateInfo, progress: Float?, actions: RemoteAc
 }
 
 @Composable
-private fun KeyTester(actions: RemoteActions) {
-    val d = LocalDs.current
-    var key by remember { mutableStateOf("KEY_") }
-    Text("Probar teclas", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-    Label("Envía cualquier código para ver qué acepta tu modelo (p. ej. KEY_PLAY_BACK, KEY_AMBIENT).", 20, InkMuted)
-    Spacer(Modifier.height(d.dp(16)))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        InputField(key, { key = it.uppercase().replace(' ', '_') }, "KEY_…", Modifier.weight(1f), mono = true) {
-            if (key.length > 4) actions.key(key)
-        }
-        Spacer(Modifier.width(d.dp(14)))
-        PillButton("Enviar", Modifier.width(d.dp(150))) { if (key.length > 4) actions.key(key) }
-    }
-    Spacer(Modifier.height(d.dp(14)))
-    Row(horizontalArrangement = Arrangement.spacedBy(d.dp(10))) {
-        listOf("KEY_PLAY_BACK", "KEY_PAUSE", "KEY_PLAY").forEach { k ->
-            Segment(k.removePrefix("KEY_"), false, Modifier.weight(1f)) { actions.key(k) }
-        }
-    }
-}
-
-@Composable
-private fun PowerLab(tv: SamsungTv, log: List<String>, busy: Boolean, actions: RemoteActions) {
-    val d = LocalDs.current
-    var mac by remember(tv.macAddress) { mutableStateOf(tv.macAddress ?: "") }
-    Text("Pruebas de encendido", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-    Label(
-        "Para encender por red, activa en la TV: Ajustes › General › Red › Configuración experta › " +
-            "Encender con móvil. Si la TV va por cable, usa la MAC del cable.", 20, InkMuted
-    )
-    Spacer(Modifier.height(d.dp(18)))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.weight(1f).height(d.dp(76)).background(pal.fg.copy(.04f), RoundedCornerShape(d.dp(22)))
-                .border(1.dp, pal.fg.copy(.08f), RoundedCornerShape(d.dp(22))).padding(horizontal = d.dp(22)),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            if (mac.isEmpty()) Label("MAC de la TV (AA:BB:CC:DD:EE:FF)", 22, InkMuted)
-            BasicTextField(
-                mac, { mac = it.take(17) }, singleLine = true,
-                textStyle = TextStyle(color = Ink, fontSize = d.sp(25), fontFamily = FontFamily.Monospace),
-                cursorBrush = SolidColor(Ink),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { actions.saveMac(mac) }),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Spacer(Modifier.width(d.dp(14)))
-        PillButton("Guardar", Modifier.width(d.dp(150))) { actions.saveMac(mac) }
-    }
-    Spacer(Modifier.height(d.dp(16)))
-    Row(horizontalArrangement = Arrangement.spacedBy(d.dp(14))) {
-        PillButton("Estado", Modifier.weight(1f), onClick = actions.probeTv)
-        PillButton("Wake-on-LAN", Modifier.weight(1.3f), onClick = actions.wakeTest)
-        PillButton(if (busy) "…" else "Encender", Modifier.weight(1.1f), onClick = actions.power)
-    }
-    if (log.isNotEmpty()) {
-        Spacer(Modifier.height(d.dp(18)))
-        Column(
-            Modifier.fillMaxWidth().background(pal.fg.copy(if (pal.dark) .0f else .04f)).background(Color.Black.copy(if (pal.dark) .35f else 0f), RoundedCornerShape(d.dp(20)))
-                .padding(d.dp(18))
-        ) {
-            log.take(14).forEach {
-                Text(it, color = InkMuted, fontSize = d.sp(17), fontFamily = FontFamily.Monospace)
-            }
-        }
-        Text(
-            "Borrar registro", color = InkMuted, fontSize = d.sp(20),
-            modifier = Modifier.padding(top = d.dp(10)).pressable(onClick = actions.clearLog).padding(d.dp(6))
-        )
-    }
-}
-
-@Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) {
     val d = LocalDs.current
     Column(
@@ -1173,19 +969,6 @@ private fun Card(content: @Composable ColumnScope.() -> Unit) {
             .glass(RoundedCornerShape(d.dp(32))).padding(d.dp(32)),
         content = content
     )
-}
-
-@Composable
-private fun Switch(on: Boolean) {
-    val d = LocalDs.current
-    val x by animateFloatAsState(if (on) 1f else 0f, label = "switch")
-    Box(
-        Modifier.size(d.dp(84), d.dp(48))
-            .background(if (on) pal.switchOn else pal.switchOff, CircleShape)
-            .border(1.dp, pal.fg.copy(.10f), CircleShape).padding(d.dp(5))
-    ) {
-        Box(Modifier.offset(x = d.dp(36 * x)).size(d.dp(38)).background(if (on) Ink else InkMuted, CircleShape))
-    }
 }
 
 @Composable

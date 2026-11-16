@@ -100,14 +100,6 @@ class TvStore(context: Context) {
     var dismissedUpdate: String?
         get() = prefs.getString("dismissed_update", null)
         set(v) = prefs.edit().putString("dismissed_update", v).apply()
-
-    var smartThingsToken: String?
-        get() = prefs.getString("st_token", null)?.takeIf { it.isNotBlank() }
-        set(v) = prefs.edit().putString("st_token", v?.trim()).apply()
-
-    var smartThingsDevice: StDevice?
-        get() = prefs.getString("st_device_id", null)?.let { StDevice(it, prefs.getString("st_device_name", "") ?: "") }
-        set(v) = prefs.edit().putString("st_device_id", v?.id).putString("st_device_name", v?.name).apply()
 }
 
 /**
@@ -220,24 +212,13 @@ class TvSession(
         log("MAC guardada: $mac")
     }
 
-    private suspend fun waitReachable(ip: String, timeoutMs: Long): TvProbe? {
-        val end = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < end) {
-            val p = WakeOnLan.probe(ip, 700)
-            if (p.reachable) return p
-            delay(600)
-        }
-        return null
-    }
-
     /**
      * Power button.
      *  - Connected: KEY_POWER.
      *  - TV answers on its REST API: it is on or in a standby that keeps the network alive;
      *    KEY_POWER toggles both.
-     *  - TV does not answer (deep standby): SmartThings "on" if configured, plus
-     *    Wake-on-LAN rounds until it answers; then connect, and light the screen if only
-     *    the network woke up. If it never answers, check whether its IP changed.
+     *  - TV does not answer (deep standby): Wake-on-LAN rounds until it answers; then connect,
+     *    and light the screen if only the network woke up. If it never answers, check whether its IP changed.
      */
     suspend fun power() {
         if (remote.isConnected()) {
@@ -261,29 +242,16 @@ class TvSession(
             return
         }
 
-        val token = store.smartThingsToken
-        val stDevice = store.smartThingsDevice
-        val useSt = token != null && stDevice != null
-        if (useSt) {
-            log("SmartThings: enviando \"encender\" a ${stDevice!!.name}")
-            SmartThings.setSwitch(token!!, stDevice.id, true)
-                .onSuccess { log("SmartThings aceptó la orden") }
-                .onFailure { log("SmartThings: ${it.localizedMessage}") }
-        }
         val mac = store.selectedTv?.macAddress
-        if (mac == null && !useSt) {
+        if (mac == null) {
             log("La TV no responde y no hay MAC guardada")
-            status("Conecta la TV encendida una vez (o escribe su MAC en Ajustes) para poder encenderla.")
+            status("Conecta la TV encendida una vez para que la app aprenda a encenderla.")
             return
         }
         status("Encendiendo el televisor…")
         var current = store.selectedTv ?: tv
-        var woke = if (mac != null) {
-            log("Wake-on-LAN a $mac")
-            WakeOnLan.wakeAndWait(context, mac, current.ip, log = log)
-        } else {
-            waitReachable(current.ip, 20_000)
-        }
+        log("Wake-on-LAN a $mac")
+        var woke = WakeOnLan.wakeAndWait(context, mac, current.ip, log = log)
         if (woke == null) {
             val moved = relocate(current)
             if (moved != null) {
@@ -294,7 +262,7 @@ class TvSession(
         if (woke == null || !woke.reachable) {
             status(
                 "La TV no respondió. Activa \"Encender con móvil\" en Ajustes › General › Red › " +
-                    "Configuración experta de la TV, o configura SmartThings."
+                    "Configuración experta de la TV."
             )
             return
         }

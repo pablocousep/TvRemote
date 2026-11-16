@@ -50,7 +50,7 @@ class ScreenshotTest {
 
     @Test fun settings() {
         show(RemoteUiState(
-            connected = true, selectedTv = tv, powerLog = listOf("12:00:00  La TV responde"),
+            connected = true, selectedTv = tv,
             savedTvs = listOf(SavedTv(tv, System.currentTimeMillis() - 3_600_000)),
             tvs = listOf(SamsungTv("192.168.1.31", "Samsung The Frame", "QE55LS03BAUXXC"))
         ))
