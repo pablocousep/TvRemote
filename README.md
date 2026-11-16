@@ -12,7 +12,7 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - Todas las compilaciones se firman con la clave compartida `app/signing/tvremote.jks` (incluida en el repositorio a propósito). Así cada versión nueva se instala encima de la anterior y la app puede actualizarse sola.
 - Al abrirse, la app consulta el último release de GitHub como mucho cada 6 horas. Si hay uno más nuevo, ofrece descargarlo e instalarlo. También se puede comprobar tocando la versión al pie de *Ajustes*.
 - La primera vez Android pide permitir que TvRemote instale apps.
-- Los releases usan la etiqueta `v0.3.<n>`, donde `<n>` es el `versionCode` del APK.
+- Los releases usan la etiqueta `v0.3.<n>`, donde `<n>` es el `versionCode` del APK. CI lo calcula solo a partir del número de ejecución (no hay que subirlo a mano).
 - Al ser pública, cualquiera podría firmar un APK con esa clave. La app solo descarga de los releases de este repositorio, así que no instales APKs de TvRemote de otras fuentes.
 - Si en el futuro se configura una clave privada mediante los secretos `TVREMOTE_KEYSTORE_BASE64`, `TVREMOTE_KEYSTORE_PASSWORD`, `TVREMOTE_KEY_ALIAS` y `TVREMOTE_KEY_PASSWORD`, CI firmará el release con ella. Ese cambio de clave obliga a desinstalar la app una vez.
 

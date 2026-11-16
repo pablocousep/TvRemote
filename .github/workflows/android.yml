@@ -26,10 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_KEYSTORE: ${{ secrets.TVREMOTE_KEYSTORE_BASE64 != '' }}
-      TVREMOTE_BUILD_NUMBER: "55"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Compute version
+        # Monotonic build number: run 81 published v0.3.55, so subtract 26. It becomes the APK
+        # versionCode and the release tag, which the in-app updater compares.
+        run: echo "TVREMOTE_BUILD_NUMBER=$((GITHUB_RUN_NUMBER - 26))" >> "$GITHUB_ENV"
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -69,11 +72,11 @@ jobs:
           echo "$TVREMOTE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tvremote.jks"
           export TVREMOTE_KEYSTORE="$RUNNER_TEMP/tvremote.jks"
           gradle --no-daemon assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk "TvRemote-v0.3.55.apk"
+          cp app/build/outputs/apk/release/app-release.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}.apk"
 
       - name: Name debug APK
         if: env.HAS_KEYSTORE != 'true'
-        run: cp app/build/outputs/apk/debug/app-debug.apk "TvRemote-v0.3.55-debug.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -87,7 +90,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.55
-          name: TvRemote v0.3.55
+          tag_name: v0.3.${{ env.TVREMOTE_BUILD_NUMBER }}
+          name: TvRemote v0.3.${{ env.TVREMOTE_BUILD_NUMBER }}
           generate_release_notes: true
           files: TvRemote-v0.3.*.apk

@@ -64,7 +64,7 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
             context, 530, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = Notification.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_w_power)
+            .setSmallIcon(R.drawable.ic_w_remote)
             .setContentTitle("Actualización disponible")
             .setContentText("TvRemote $tag ya está disponible")
             .setContentIntent(pending)

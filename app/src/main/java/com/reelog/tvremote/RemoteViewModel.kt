@@ -73,9 +73,11 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         selectedTv.value?.let { connect(it, auto = true) }
         // Schedule a network-aware check every six hours, including while the app is closed.
         UpdateCheckWorker.schedule(app)
-        when {
-            store.pendingUpdateTag != null -> checkForUpdates(silent = false)
-            System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L -> checkForUpdates(silent = true)
+        // A release found in the background is shown right away; otherwise check every 6 hours.
+        // Silent: the prompt still appears for a new, not-dismissed release, but there is no
+        // "you're up to date" message when the pending one was just installed.
+        if (store.pendingUpdateTag != null || System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) {
+            checkForUpdates(silent = true)
         }
     }
 

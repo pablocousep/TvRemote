@@ -304,7 +304,7 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
 
         if (showPicker) {
             CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
-                TvPickerDialog(state.status, state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions) { showPicker = false }
+                TvPickerDialog(state, actions) { showPicker = false }
             }
         }
     }
@@ -892,12 +892,14 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 Spacer(Modifier.width(d.dp(20)))
                 Column(Modifier.weight(1f)) {
                     Text("Televisores guardados", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
-                    Label("Gestiona tus televisores conectados", 21, InkMuted)
+                    Label("Toca uno para conectarte", 21, InkMuted)
                 }
-                Icon("chevronRight", Modifier.size(d.dp(22)), InkMuted)
             }
             Spacer(Modifier.height(d.dp(24)))
-            TvList(state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = {})
+            TvList(
+                state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = {},
+                connected = state.connected, connecting = state.connecting || state.powerBusy, asleep = state.tvAsleep
+            )
         }
         // Appearance
         Card {
@@ -919,39 +921,56 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
         // Updates
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SettingsIcon("skip")
+                SettingsIcon("download")
                 Spacer(Modifier.width(d.dp(20)))
                 Column {
                     Text("Actualizaciones", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
-                    Label("Mantén la app siempre al día", 21, InkMuted)
+                    Label(
+                        state.update?.let { "Nueva versión ${it.tag} disponible" }
+                            ?: state.versionName.takeIf { it.isNotBlank() }?.let { "Versión instalada $it" }
+                            ?: "Mantén la app siempre al día",
+                        21, if (state.update != null) OnlineGreen else InkMuted
+                    )
                 }
             }
             Spacer(Modifier.height(d.dp(22)))
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(d.dp(24)))
-                    .background(pal.fg.copy(.035f))
-                    .border(1.dp, pal.fg.copy(.09f), RoundedCornerShape(d.dp(24)))
-                    .pressable(description = "Buscar actualizaciones", onClick = actions.checkForUpdates)
-                    .padding(horizontal = d.dp(24), vertical = d.dp(22)),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon("download", Modifier.size(d.dp(30)), InkMuted)
-                Spacer(Modifier.width(d.dp(20)))
-                Text(
-                    if (state.updateChecking) "Comprobando actualizaciones…" else "Buscar actualizaciones",
-                    color = Ink, fontSize = d.sp(23), fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon("chevronRight", Modifier.size(d.dp(22)), InkMuted)
+            val update = state.update
+            when {
+                state.updateProgress != null -> UpdateProgress(state.updateProgress)
+                else -> Row(
+                    Modifier.fillMaxWidth().height(d.dp(76)).clip(RoundedCornerShape(d.dp(38)))
+                        .background(if (update != null) OnlineGreen.copy(.16f) else pal.fg.copy(.055f))
+                        .border(1.dp, if (update != null) OnlineGreen.copy(.45f) else pal.fg.copy(.07f), RoundedCornerShape(d.dp(38)))
+                        .pressable(
+                            description = if (update != null) "Actualizar" else "Buscar actualizaciones",
+                            onClick = if (update != null) actions.startUpdate else actions.checkForUpdates
+                        ),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when {
+                        state.updateChecking -> Spinner(Modifier.size(d.dp(26)))
+                        update != null -> Icon("download", Modifier.size(d.dp(26)), Ink)
+                        else -> Icon("refresh", Modifier.size(d.dp(26)), Ink)
+                    }
+                    Spacer(Modifier.width(d.dp(16)))
+                    Label(
+                        when {
+                            state.updateChecking -> "Comprobando…"
+                            update != null -> "Actualizar a ${update.tag}"
+                            else -> "Buscar actualizaciones"
+                        }, 23
+                    )
+                }
             }
         }
         Row(
             Modifier.padding(start = d.dp(48), top = d.dp(4), bottom = d.dp(36)),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon("info", Modifier.size(d.dp(24)), InkMuted)
-            Spacer(Modifier.width(d.dp(14)))
-            Text("TvRemote ${state.versionName}", color = InkMuted, fontSize = d.sp(20))
+            Text(
+                "TvRemote ${state.versionName}".trim() + " · Samsung Smart TV (Tizen 2016+)",
+                color = InkMuted.copy(.75f), fontSize = d.sp(19)
+            )
         }
     }
 }
@@ -1040,7 +1059,8 @@ private fun Card(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun TvList(
     scanning: Boolean, tvs: List<SamsungTv>, saved: List<SavedTv>, selectedTv: SamsungTv?,
-    actions: RemoteActions, onChosen: () -> Unit
+    actions: RemoteActions, onChosen: () -> Unit,
+    connected: Boolean = false, connecting: Boolean = false, asleep: Boolean = false
 ) {
     val d = LocalDs.current
     fun same(a: SamsungTv, b: SamsungTv) =
@@ -1051,15 +1071,25 @@ private fun TvList(
     if (saved.isEmpty()) {
         Label("Aún no hay televisores guardados. Añade uno para empezar.", 20, InkMuted)
     }
-    saved.forEach { entry ->
-        Spacer(Modifier.height(d.dp(14)))
+    saved.forEachIndexed { i, entry ->
+        if (i > 0) Spacer(Modifier.height(d.dp(12)))
+        val current = selectedTv?.let { same(it, entry.tv) } == true
+        val state = when {
+            !current -> TvRowState.Idle
+            connected -> TvRowState.Connected
+            connecting -> TvRowState.Connecting
+            asleep -> TvRowState.Asleep
+            else -> TvRowState.Idle
+        }
         TvRow(
-            entry.tv, selectedTv?.let { same(it, entry.tv) } == true,
-            "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
-            secondary = "Quitar", onSecondary = { actions.forgetSaved(entry.tv) }
+            entry.tv, state,
+            if (current && state != TvRowState.Idle) entry.tv.model.ifBlank { entry.tv.ip }
+            else "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
+            trailingIcon = "trash", trailingDescription = "Quitar ${entry.tv.name}",
+            onTrailing = { actions.forgetSaved(entry.tv) }
         ) { actions.connect(entry.tv); onChosen() }
     }
-    Spacer(Modifier.height(d.dp(18)))
+    Spacer(Modifier.height(d.dp(if (saved.isEmpty()) 16 else 20)))
     Row(
         Modifier.fillMaxWidth().height(d.dp(70)).clip(RoundedCornerShape(d.dp(35)))
             .background(pal.fg.copy(.055f))
@@ -1067,7 +1097,7 @@ private fun TvList(
             .pressable(description = "Añadir televisor", onClick = { adding = true; actions.discover() }),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon("plus", Modifier.size(d.dp(26)), Ink)
+        if (scanning) Spinner(Modifier.size(d.dp(26))) else Icon("plus", Modifier.size(d.dp(24)), Ink)
         Spacer(Modifier.width(d.dp(16)))
         Label(if (scanning) "Buscando televisores…" else "Añadir televisor", 23)
     }
@@ -1081,10 +1111,11 @@ private fun TvList(
             20, InkMuted
         )
         fresh.forEach { tv ->
-            Spacer(Modifier.height(d.dp(16)))
+            Spacer(Modifier.height(d.dp(12)))
             TvRow(
-                tv, false, "${tv.model} · ${tv.ip}",
-                secondary = "Cerrar", onSecondary = { adding = false }
+                tv, TvRowState.New, "${tv.model} · ${tv.ip}",
+                trailingIcon = "close", trailingDescription = "Cerrar resultados",
+                onTrailing = { adding = false }
             ) { actions.connect(tv); adding = false; onChosen() }
         }
     }
@@ -1102,56 +1133,103 @@ private fun lastUsed(time: Long): String {
     }
 }
 
+private enum class TvRowState { Idle, Connected, Connecting, Asleep, New }
+
+/** One television: tap the row to connect; the round button on the right removes it. */
 @Composable
 private fun TvRow(
-    tv: SamsungTv, selected: Boolean, subtitle: String,
-    secondary: String, onSecondary: () -> Unit, onConnect: () -> Unit
+    tv: SamsungTv, state: TvRowState, subtitle: String,
+    trailingIcon: String, trailingDescription: String, onTrailing: () -> Unit, onConnect: () -> Unit
 ) {
     val d = LocalDs.current
+    val active = state == TvRowState.Connected || state == TvRowState.Connecting || state == TvRowState.Asleep
+    val shape = RoundedCornerShape(d.dp(26))
+    var pressed by remember { mutableStateOf(false) }
+    val k by animateFloatAsState(if (pressed) .98f else 1f, label = "tvrow")
     Row(
-        Modifier.fillMaxWidth()
-            .background(if (selected) pal.fg.copy(.07f) else pal.fg.copy(.03f), RoundedCornerShape(d.dp(22)))
-            .border(1.dp, pal.fg.copy(if (selected) .14f else .05f), RoundedCornerShape(d.dp(22)))
-            .padding(d.dp(20)),
+        Modifier.fillMaxWidth().scale(k).clip(shape)
+            .background(pal.fg.copy(if (active) .07f else .035f))
+            .background(if (pressed) pal.fg.copy(.05f) else Color.Transparent)
+            .border(1.dp, pal.fg.copy(if (active) .13f else .06f), shape)
+            .pressable(description = "Conectar con ${tv.name}", onPressedChange = { pressed = it }, onClick = onConnect)
+            .padding(start = d.dp(20), end = d.dp(12), top = d.dp(18), bottom = d.dp(18)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon("tv", Modifier.size(d.dp(34), d.dp(30)), if (selected) Ink else InkMuted)
-        Spacer(Modifier.width(d.dp(18)))
+        Box(
+            Modifier.size(d.dp(66)).background(pal.fg.copy(if (active) .10f else .06f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon("tv", Modifier.size(d.dp(32), d.dp(28)), if (active) Ink else InkMuted)
+        }
+        Spacer(Modifier.width(d.dp(20)))
         Column(Modifier.weight(1f)) {
             Text(tv.name, color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Label(subtitle, 20, InkMuted)
+            Spacer(Modifier.height(d.dp(4)))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val (dot, label) = when (state) {
+                    TvRowState.Connected -> OnlineGreen to "Conectado"
+                    TvRowState.Connecting -> Color(0xFFF5A623) to "Conectando…"
+                    TvRowState.Asleep -> DotOff to "En reposo"
+                    else -> null to null
+                }
+                if (dot != null && label != null) {
+                    Box(Modifier.size(d.dp(10)).background(dot, CircleShape))
+                    Spacer(Modifier.width(d.dp(8)))
+                    Text(label, color = Ink.copy(.85f), fontSize = d.sp(20), fontWeight = FontWeight.Medium)
+                    Text("  ·  ", color = InkMuted, fontSize = d.sp(20))
+                }
+                Text(subtitle, color = InkMuted, fontSize = d.sp(20), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            PillButton(if (selected) "Reconectar" else "Conectar", Modifier.width(d.dp(170)), onClick = onConnect)
+        if (state == TvRowState.Idle || state == TvRowState.New) {
+            Spacer(Modifier.width(d.dp(10)))
             Text(
-                secondary, color = InkMuted, fontSize = d.sp(19),
-                modifier = Modifier.padding(top = d.dp(6)).pressable(description = secondary, onClick = onSecondary).padding(d.dp(5))
+                "Conectar", color = Ink, fontSize = d.sp(21), fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.background(pal.fg.copy(.08f), RoundedCornerShape(d.dp(24)))
+                    .padding(horizontal = d.dp(20), vertical = d.dp(12))
             )
         }
+        Spacer(Modifier.width(d.dp(6)))
+        Box(
+            Modifier.size(d.dp(58)).clip(CircleShape)
+                .pressable(description = trailingDescription, onClick = onTrailing),
+            contentAlignment = Alignment.Center
+        ) { Icon(trailingIcon, Modifier.size(d.dp(24)), InkMuted) }
     }
 }
 
 @Composable
-private fun TvPickerDialog(
-    status: String, scanning: Boolean, tvs: List<SamsungTv>, saved: List<SavedTv>, selectedTv: SamsungTv?,
-    actions: RemoteActions, onDismiss: () -> Unit
-) {
+private fun Spinner(modifier: Modifier) {
+    val t = rememberInfiniteTransition(label = "spin")
+    val angle by t.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "a")
+    val ink = Ink
+    Canvas(modifier) {
+        drawArc(ink, angle, 270f, false, style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
+@Composable
+private fun TvPickerDialog(state: RemoteUiState, actions: RemoteActions, onDismiss: () -> Unit) {
     val d = LocalDs.current
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().background(pal.dialogBg, RoundedCornerShape(d.dp(40)))
                 .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(40)))
-                .padding(d.dp(36)).verticalScroll(rememberScrollState())
+                .padding(d.dp(32)).verticalScroll(rememberScrollState())
         ) {
-            Text("Elegir televisor", color = Ink, fontSize = d.sp(36), fontWeight = FontWeight.Bold)
-            if (status.isNotBlank()) {
-                Spacer(Modifier.height(d.dp(8)))
-                Label(status, 21, InkMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Elegir televisor", color = Ink, fontSize = d.sp(34), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Box(
+                    Modifier.size(d.dp(58)).clip(CircleShape).background(pal.fg.copy(.06f))
+                        .pressable(description = "Cerrar", onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) { Icon("close", Modifier.size(d.dp(22)), Ink) }
             }
-            Spacer(Modifier.height(d.dp(28)))
-            TvList(scanning, tvs, saved, selectedTv, actions, onChosen = onDismiss)
-            Spacer(Modifier.height(d.dp(28)))
-            PillButton("Cerrar", Modifier.fillMaxWidth(), onClick = onDismiss)
+            Spacer(Modifier.height(d.dp(24)))
+            TvList(
+                state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = onDismiss,
+                connected = state.connected, connecting = state.connecting || state.powerBusy, asleep = state.tvAsleep
+            )
         }
     }
 }
@@ -1463,6 +1541,17 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .40f), h * (.88f - .40f)), Size(w * .80f, h * .80f), style = stroke)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .22f), h * (.88f - .22f)), Size(w * .44f, h * .44f), style = stroke)
                 drawCircle(tint, m * .06f, p(.11f, .85f))
+            }
+            "trash" -> {
+                line(.14f, .24f, .86f, .24f)
+                poly(.38f to .24f, .40f to .10f, .60f to .10f, .62f to .24f)
+                poly(.22f to .24f, .28f to .92f, .72f to .92f, .78f to .24f)
+                line(.42f, .40f, .42f, .76f); line(.58f, .40f, .58f, .76f)
+            }
+            "close" -> { line(.18f, .18f, .82f, .82f); line(.82f, .18f, .18f, .82f) }
+            "refresh" -> {
+                drawArc(tint, -60f, 300f, false, p(.12f, .12f), Size(w * .76f, h * .76f), style = stroke)
+                poly(.62f to .06f, .84f to .16f, .74f to .38f)
             }
             "theme" -> {
                 drawCircle(tint, m * .38f, p(.5f, .5f), style = stroke)
