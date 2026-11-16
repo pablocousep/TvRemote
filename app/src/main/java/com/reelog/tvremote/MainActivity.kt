@@ -81,21 +81,39 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onConnect = { remote.connect(it.ip) },
+                    onConnect = { tv ->
+                        remote.connect(tv.ip)
+                        // The successful TV probe/connection populates Android's ARP cache.
+                        lifecycleScope.launch {
+                            kotlinx.coroutines.delay(500)
+                            val mac = tv.macAddress ?: discovery.resolveMacAddress(tv.ip)
+                            if (mac != null) {
+                                getSharedPreferences("tvremote_selected_tv", MODE_PRIVATE)
+                                    .edit().putString("mac", mac).apply()
+                            }
+                        }
+                    },
                     onKey = { remote.sendKey(it) },
                     onPower = { tv ->
                         if (remote.isConnected()) {
                             remote.sendKey("KEY_POWER")
-                        } else if (tv?.macAddress != null) {
-                            statusState.value = "Enviando señal para encender el televisor…"
+                        } else if (tv != null) {
+                            statusState.value = "Detectando la MAC y enviando Wake-on-LAN…"
                             lifecycleScope.launch {
-                                val result = WakeOnLan.wake(tv.macAddress, tv.ip)
-                                statusState.value = if (result.isSuccess)
-                                    "Señal Wake-on-LAN enviada. Si no enciende, activa Encendido por red en el televisor."
-                                else "No se pudo enviar la señal: " + (result.exceptionOrNull()?.localizedMessage ?: "error de red")
+                                val mac = tv.macAddress ?: discovery.resolveMacAddress(tv.ip)
+                                if (mac == null) {
+                                    statusState.value = "No se pudo detectar la MAC automáticamente. Enciende la TV y vuelve a conectar una vez para aprender su dirección."
+                                } else {
+                                    getSharedPreferences("tvremote_selected_tv", MODE_PRIVATE)
+                                        .edit().putString("mac", mac).apply()
+                                    val result = WakeOnLan.wake(mac, tv.ip)
+                                    statusState.value = if (result.isSuccess)
+                                        "Wake-on-LAN enviado automáticamente. Si no enciende, activa Encendido por red en el televisor."
+                                    else "No se pudo enviar Wake-on-LAN: " + (result.exceptionOrNull()?.localizedMessage ?: "error de red")
+                                }
                             }
                         } else {
-                            statusState.value = "Conecta la TV encendida una vez para guardar su dirección MAC y poder despertarla."
+                            statusState.value = "Selecciona tu televisor una vez para activar el encendido automático."
                         }
                     },
                     onText = { remote.sendText(it) },
