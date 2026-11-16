@@ -63,6 +63,34 @@ object WakeOnLan {
     }
 
     /**
+     * Launches an app through the TV's REST API. Returns true when the TV accepted it, false
+     * when it answered that the app does not exist, and null when the API is not usable.
+     */
+    suspend fun restLaunch(ip: String, appId: String): Boolean? = withContext(Dispatchers.IO) {
+        try {
+            val c = (URL("http://$ip:8001/api/v2/applications/$appId").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 1500
+                readTimeout = 2500
+                doOutput = true
+                setFixedLengthStreamingMode(0)
+            }
+            try {
+                c.outputStream.close()
+                when (c.responseCode) {
+                    in 200..299 -> true
+                    404 -> false
+                    else -> null
+                }
+            } finally {
+                c.disconnect()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Sends one round of magic packets. Every round goes to the global broadcast, to the real
      * broadcast address of each local IPv4 network (not just a guessed /24) and unicast to the
      * TV's last known IP, on UDP ports 9 and 7. When possible the socket is bound to the Wi-Fi

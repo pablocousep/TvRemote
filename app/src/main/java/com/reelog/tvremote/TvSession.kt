@@ -5,6 +5,9 @@ import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** A TV this phone has connected to before, with when it last did. */
+data class SavedTv(val tv: SamsungTv, val lastConnected: Long)
+
 /** Everything the app remembers between launches. */
 class TvStore(context: Context) {
     private val tvPrefs = context.getSharedPreferences("tvremote_selected_tv", Context.MODE_PRIVATE)
@@ -52,6 +55,43 @@ class TvStore(context: Context) {
             JSONArray(v.take(3).map { JSONObject().put("id", it.id).put("name", it.name) }).toString()
         ).apply()
 
+    /** Every TV this phone has connected to, most recent first. */
+    val savedTvs: List<SavedTv>
+        get() = prefs.getString("saved_tvs", null)?.let { raw ->
+            runCatching {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    SavedTv(
+                        SamsungTv(
+                            o.getString("ip"), o.optString("name", "Samsung Smart TV"), o.optString("model", ""),
+                            o.optString("mac").takeIf { it.isNotBlank() }
+                        ),
+                        o.optLong("last")
+                    )
+                }
+            }.getOrNull()
+        } ?: emptyList()
+
+    /** Adds or refreshes [tv] in the saved list. The same TV is matched by MAC, else by IP. */
+    fun rememberTv(tv: SamsungTv, connectedAt: Long = System.currentTimeMillis()) {
+        val others = savedTvs.filterNot { sameTv(it.tv, tv) }
+        writeSaved(listOf(SavedTv(tv, connectedAt)) + others)
+    }
+
+    fun forgetSavedTv(tv: SamsungTv) = writeSaved(savedTvs.filterNot { sameTv(it.tv, tv) })
+
+    private fun sameTv(a: SamsungTv, b: SamsungTv) =
+        (a.macAddress != null && a.macAddress.equals(b.macAddress, ignoreCase = true)) || a.ip == b.ip
+
+    private fun writeSaved(list: List<SavedTv>) {
+        val arr = JSONArray(list.sortedByDescending { it.lastConnected }.take(20).map {
+            JSONObject().put("ip", it.tv.ip).put("name", it.tv.name).put("model", it.tv.model)
+                .put("mac", it.tv.macAddress ?: "").put("last", it.lastConnected)
+        })
+        prefs.edit().putString("saved_tvs", arr.toString()).apply()
+    }
+
     var lastUpdateCheck: Long
         get() = prefs.getLong("last_update_check", 0L)
         set(v) = prefs.edit().putLong("last_update_check", v).apply()
@@ -74,6 +114,17 @@ class TvStore(context: Context) {
  * Connection and power logic shared by the app, the home-screen widget and the
  * Quick Settings tile.
  */
+/** Known Tizen app ids per brand (they vary by model year and region). */
+val KnownAppIds = mapOf(
+    "prime" to listOf("3201910019365", "3201512006785"),
+    "disney" to listOf("3201901017640"),
+    "netflix" to listOf("3201907018807", "11101200001"),
+    "youtube" to listOf("111299001912"),
+    "spotify" to listOf("3201606009684"),
+    "appletv" to listOf("3201807016597"),
+    "max" to listOf("3202301029760")
+)
+
 class TvSession(
     private val context: Context,
     private val store: TvStore,
@@ -126,6 +177,38 @@ class TvSession(
         val tv = store.selectedTv ?: return false
         if (!remote.isConnected() && !connect(tv)) return false
         remote.sendKey(key)
+        return true
+    }
+
+    /**
+     * Opens an app on the TV. App ids differ between models and regions, so this tries the id
+     * the TV itself reported for that app first, then the known ids for the brand. Each one is
+     * launched through the TV's REST API (works on most Tizen TVs), falling back to the remote
+     * control channel.
+     */
+    suspend fun launchApp(app: TvApp, installed: List<TvApp>, brand: String?): Boolean {
+        val tv = store.selectedTv ?: return false
+        val ids = linkedSetOf<String>()
+        installed.firstOrNull { it.id == app.id }?.let { ids += it.id }
+        if (brand != null) installed.filter { brandOf(it) == brand }.forEach { ids += it.id }
+        installed.filter { it.name.equals(app.name, ignoreCase = true) }.forEach { ids += it.id }
+        ids += app.id
+        brand?.let { KnownAppIds[it] }?.let { ids += it }
+
+        for (id in ids) {
+            when (WakeOnLan.restLaunch(tv.ip, id)) {
+                true -> { log("App abierta (REST): ${app.name} [$id]"); return true }
+                false -> continue          // the TV says it is not installed
+                null -> break              // REST not available on this model
+            }
+        }
+        if (!remote.isConnected() && !connect(tv)) return false
+        val id = ids.first()
+        // The TV reports app_type 2 for web apps (DEEP_LINK) and 4 for native ones (NATIVE_LAUNCH).
+        val type = installed.firstOrNull { it.id == id }?.appType
+        val action = if (type == 4) "NATIVE_LAUNCH" else "DEEP_LINK"
+        log("App abierta (canal de control, $action): ${app.name} [$id]")
+        remote.launchApp(id, action)
         return true
     }
 

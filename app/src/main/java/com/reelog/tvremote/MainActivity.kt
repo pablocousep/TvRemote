@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
             launchApp = vm::launchApp,
             power = vm::power,
             discover = vm::discover,
-            connect = vm::connect,
+            connect = { vm.connect(it) },
             forget = vm::forget,
             disconnect = vm::disconnect,
             openCastSettings = ::openCastSettings,
@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
             chooseSmartThingsDevice = vm::chooseSmartThingsDevice,
             checkForUpdates = { vm.checkForUpdates() },
             startUpdate = vm::startUpdate,
-            dismissUpdate = vm::dismissUpdate
+            dismissUpdate = vm::dismissUpdate,
+            forgetSaved = vm::forgetSaved
         )
 
         setContent {
@@ -71,7 +72,9 @@ class MainActivity : ComponentActivity() {
                 update = vm.update.value,
                 updatePrompt = vm.updatePrompt.value,
                 updateChecking = vm.updateChecking.value,
-                updateProgress = vm.updateProgress.value
+                updateProgress = vm.updateProgress.value,
+                savedTvs = vm.savedTvs.toList(),
+                tvAsleep = vm.tvAsleep.value
             )
             RemoteScreen(state, actions)
         }

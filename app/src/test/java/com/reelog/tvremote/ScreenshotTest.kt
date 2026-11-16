@@ -49,7 +49,11 @@ class ScreenshotTest {
     @Test fun cast() { show(); rule.onNodeWithContentDescription("Transmitir").performClick(); shot("04-cast") }
 
     @Test fun settings() {
-        show(RemoteUiState(connected = true, tvs = listOf(tv), selectedTv = tv, powerLog = listOf("12:00:00  La TV responde")))
+        show(RemoteUiState(
+            connected = true, selectedTv = tv, powerLog = listOf("12:00:00  La TV responde"),
+            savedTvs = listOf(SavedTv(tv, System.currentTimeMillis() - 3_600_000)),
+            tvs = listOf(SamsungTv("192.168.1.31", "Samsung The Frame", "QE55LS03BAUXXC"))
+        ))
         rule.onNodeWithContentDescription("Ajustes").performClick()
         shot("05-settings")
     }

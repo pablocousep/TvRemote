@@ -25,6 +25,9 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val connected = mutableStateOf(false)
     val connecting = mutableStateOf(false)
     val connectionLost = mutableStateOf(false)
+    /** The TV is off/asleep but can be woken (Wake-on-LAN MAC or SmartThings configured). */
+    val tvAsleep = mutableStateOf(false)
+    val savedTvs = mutableStateListOf<SavedTv>().apply { addAll(store.savedTvs) }
     val scanning = mutableStateOf(false)
     val foundTvs = mutableStateListOf<SamsungTv>()
     val selectedTv = mutableStateOf(store.selectedTv)
@@ -53,7 +56,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     private val remote = SamsungRemote(
         app,
-        onStatus = { msg -> viewModelScope.launch { setStatus(msg) } },
+        onStatus = { msg -> viewModelScope.launch { onRemoteStatus(msg) } },
         onConnectionChanged = { up -> viewModelScope.launch { onConnection(up) } },
         onInstalledApps = { apps -> viewModelScope.launch { onApps(apps) } },
         onAppIcon = { path, png -> viewModelScope.launch { onIcon(path, png) } }
@@ -67,9 +70,26 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     init {
-        selectedTv.value?.let { connect(it) }
+        // TVs paired before the saved list existed: keep the current one in it.
+        selectedTv.value?.let { tv ->
+            if (savedTvs.none { it.tv.ip == tv.ip }) {
+                store.rememberTv(tv, connectedAt = 0L)
+                savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+            }
+        }
+        selectedTv.value?.let { connect(it, auto = true) }
         // Quietly look for a new release at most every 6 hours.
         if (System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) checkForUpdates(silent = true)
+    }
+
+    /** True when a switched-off TV can be woken, so "no connection" is not an error. */
+    private fun canWake() = selectedTv.value?.macAddress != null || (stConfigured.value && stDevice.value != null)
+
+    /** Connection errors are expected while the TV sleeps; keep them in the log instead. */
+    private fun onRemoteStatus(msg: String) {
+        val connectionNoise = msg.startsWith("No se pudo conectar") || msg == "Conexión cerrada" ||
+            msg.startsWith("Conexión TLS verificada")
+        if (connectionNoise && canWake()) log(msg) else setStatus(msg)
     }
 
     private fun onConnection(up: Boolean) {
@@ -78,9 +98,29 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         if (up) {
             connecting.value = false
             connectionLost.value = false
+            tvAsleep.value = false
+            selectedTv.value?.let { tv ->
+                store.rememberTv(tv)
+                savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+            }
             remote.requestInstalledApps()
         } else if (wasConnected && !userDisconnected) {
-            connectionLost.value = true
+            if (canWake()) {
+                // Usually the TV was switched off. Reconnect quietly if it is still there.
+                tvAsleep.value = true
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(1500)
+                    val tv = selectedTv.value ?: return@launch
+                    if (WakeOnLan.probe(tv.ip).reachable) {
+                        log("La TV sigue en la red: reconectando")
+                        session.connect(tv, relocate = false)
+                    } else {
+                        log("La TV se ha apagado")
+                    }
+                }
+            } else {
+                connectionLost.value = true
+            }
         }
     }
 
@@ -112,16 +152,26 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun key(k: String) {
         if (remote.isConnected()) remote.sendKey(k)
-        else viewModelScope.launch { if (!session.sendKey(k)) setStatus("No hay conexión con el televisor") }
+        else viewModelScope.launch {
+            if (!session.sendKey(k)) {
+                setStatus(if (canWake()) "La TV está apagada. Pulsa encender." else "No hay conexión con el televisor")
+            }
+        }
     }
 
     fun text(value: String) = remote.sendText(value)
-    fun launchApp(id: String) = remote.launchApp(id)
+    fun launchApp(app: TvApp) {
+        viewModelScope.launch {
+            if (!session.launchApp(app, installedApps.toList(), brandOf(app))) {
+                setStatus(if (canWake()) "La TV está apagada. Pulsa encender." else "No hay conexión con el televisor")
+            }
+        }
+    }
     fun isConnected() = remote.isConnected()
 
     // --- Connection ---------------------------------------------------------------------------
 
-    fun connect(tv: SamsungTv) {
+    fun connect(tv: SamsungTv, auto: Boolean = false) {
         userDisconnected = false
         connectionLost.value = false
         if (selectedTv.value?.ip != tv.ip) {
@@ -131,9 +181,17 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         selectedTv.value = tv
         connecting.value = true
         viewModelScope.launch {
-            val ok = session.connect(tv)
+            // On launch the TV is often just asleep: don't scan the network for a new IP then.
+            val ok = session.connect(tv, relocate = !auto)
             connecting.value = false
-            if (!ok) setStatus("No se pudo conectar con ${tv.name}")
+            if (!ok) {
+                if (canWake()) {
+                    tvAsleep.value = true
+                    if (!auto) setStatus("${tv.name} está apagada. Pulsa encender para despertarla.")
+                } else {
+                    setStatus("No se pudo conectar con ${tv.name}")
+                }
+            }
         }
     }
 
@@ -147,6 +205,14 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun forget(tv: SamsungTv) = remote.forgetPairing(tv.ip)
+
+    /** Removes a TV from the saved list (and its pairing). */
+    fun forgetSaved(tv: SamsungTv) {
+        store.forgetSavedTv(tv)
+        remote.forgetPairing(tv.ip)
+        savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+        setStatus("${tv.name} eliminada de tus televisores")
+    }
 
     fun discover() {
         if (scanning.value) return

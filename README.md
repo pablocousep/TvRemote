@@ -24,7 +24,9 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - *Ajustes*: buscar/conectar/olvidar televisores, pruebas de encendido con registro, SmartThings, tema oscuro/claro/sistema, vibración, botones de volumen del móvil y probador de teclas.
 - Botones de volumen del móvil controlan la TV con la app abierta.
 - Widget de pantalla de inicio (encender, volumen, silencio) y botón en Ajustes rápidos para encender o apagar.
+- Guarda los televisores a los que te has conectado (*Mis televisores*, con la fecha de último uso).
 - Si la TV cambia de IP, la app la vuelve a encontrar por su MAC.
+- Con Wake-on-LAN o SmartThings configurado, una TV apagada se muestra "en reposo" en lugar de dar error de conexión.
 - Se actualiza sola desde los releases de GitHub.
 
 ## Encendido

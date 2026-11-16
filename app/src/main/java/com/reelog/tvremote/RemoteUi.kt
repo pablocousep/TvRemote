@@ -172,7 +172,7 @@ private fun View.tick(enabled: Boolean) {
     if (enabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 }
 
-data class TvApp(val id: String, val name: String, val iconPath: String? = null)
+data class TvApp(val id: String, val name: String, val iconPath: String? = null, val appType: Int? = null)
 
 val TvApps = listOf(
     TvApp("3201910019365", "Prime Video"),
@@ -188,7 +188,7 @@ val TvApps = listOf(
 class RemoteActions(
     val key: (String) -> Unit,
     val text: (String) -> Unit,
-    val launchApp: (String) -> Unit,
+    val launchApp: (TvApp) -> Unit,
     val power: () -> Unit,
     val discover: () -> Unit,
     val connect: (SamsungTv) -> Unit,
@@ -208,7 +208,8 @@ class RemoteActions(
     val chooseSmartThingsDevice: (StDevice) -> Unit = {},
     val checkForUpdates: () -> Unit = {},
     val startUpdate: () -> Unit = {},
-    val dismissUpdate: () -> Unit = {}
+    val dismissUpdate: () -> Unit = {},
+    val forgetSaved: (SamsungTv) -> Unit = {}
 )
 
 /** Snapshot of everything the screen shows. */
@@ -236,7 +237,9 @@ data class RemoteUiState(
     val update: UpdateInfo? = null,
     val updatePrompt: Boolean = false,
     val updateChecking: Boolean = false,
-    val updateProgress: Float? = null
+    val updateProgress: Float? = null,
+    val savedTvs: List<SavedTv> = emptyList(),
+    val tvAsleep: Boolean = false
 )
 
 // ---------------------------------------------------------------------------
@@ -313,7 +316,7 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
 
         if (showPicker) {
             CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
-                TvPickerDialog(state.status, state.scanning, state.tvs, state.selectedTv, actions) { showPicker = false }
+                TvPickerDialog(state.status, state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions) { showPicker = false }
             }
         }
     }
@@ -389,6 +392,10 @@ private fun Header(state: RemoteUiState, actions: RemoteActions, onPickTv: () ->
             Box {
                 Icon("tv", Modifier.size(d.dp(30), d.dp(26)), Ink.copy(alpha = .85f))
                 val busy = state.connecting || powerBusy
+                if (!connected && !busy && state.tvAsleep) Box(
+                    Modifier.align(Alignment.TopEnd).offset(d.dp(5), d.dp(-3)).size(d.dp(9))
+                        .background(DotOff, CircleShape).border(d.dp(2), Bg, CircleShape)
+                )
                 if (connected || busy) {
                     val pulse = rememberInfiniteTransition(label = "pulse")
                     val k by pulse.animateFloat(
@@ -431,7 +438,7 @@ private fun MainPage(pinned: List<TvApp>, actions: RemoteActions) {
         pinned.take(3).forEachIndexed { i, app ->
             GlassButton(
                 Modifier.at(d, 46 + i * (w + 24f), 16, w, 100), RoundedCornerShape(d.dp(24)),
-                description = "Abrir ${app.name}", onClick = { actions.launchApp(app.id) }
+                description = "Abrir ${app.name}", onClick = { actions.launchApp(app) }
             ) { AppLogo(app, if (n == 3) 1f else 1.15f) }
         }
 
@@ -612,7 +619,7 @@ private fun RockerPill(modifier: Modifier, kind: String, onUp: () -> Unit, onDow
 }
 
 /** Which bundled official logo an app uses, or null. */
-private fun brandOf(app: TvApp): String? {
+fun brandOf(app: TvApp): String? {
     val n = app.name.lowercase()
     return when {
         app.id == "3201910019365" || "prime" in n -> "prime"
@@ -834,7 +841,7 @@ private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
                         Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
                         description = "Abrir ${app.name}",
                         onLongClick = { actions.togglePin(app) },
-                        onClick = { actions.launchApp(app.id) }
+                        onClick = { actions.launchApp(app) }
                     ) {
                         AppLogo(app, 1.15f)
                     }
@@ -900,7 +907,14 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(d.dp(14)).background(if (connected) OnlineGreen else DotOff, CircleShape))
                 Spacer(Modifier.width(d.dp(10)))
-                Label(if (connected) "Conectado" else if (state.connecting) "Conectando…" else "Sin conexión", 22, Ink)
+                Label(
+                    when {
+                        connected -> "Conectado"
+                        state.connecting -> "Conectando…"
+                        state.tvAsleep -> "En reposo · pulsa encender para despertarla"
+                        else -> "Sin conexión"
+                    }, 22, Ink
+                )
             }
             if (state.status.isNotBlank()) {
                 Spacer(Modifier.height(d.dp(10)))
@@ -914,7 +928,7 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 }
             }
         }
-        Card { TvList(state.scanning, state.tvs, selectedTv, actions, onChosen = {}) }
+        Card { TvList(state.scanning, state.tvs, state.savedTvs, selectedTv, actions, onChosen = {}) }
         if (selectedTv != null) Card { PowerLab(selectedTv, state.powerLog, state.powerBusy, actions) }
         Card { SmartThingsCard(state, actions) }
         Card {
@@ -1176,10 +1190,25 @@ private fun Switch(on: Boolean) {
 
 @Composable
 private fun TvList(
-    scanning: Boolean, tvs: List<SamsungTv>, selectedTv: SamsungTv?,
+    scanning: Boolean, tvs: List<SamsungTv>, saved: List<SavedTv>, selectedTv: SamsungTv?,
     actions: RemoteActions, onChosen: () -> Unit
 ) {
     val d = LocalDs.current
+    fun same(a: SamsungTv, b: SamsungTv) =
+        (a.macAddress != null && a.macAddress.equals(b.macAddress, true)) || a.ip == b.ip
+    if (saved.isNotEmpty()) {
+        Text("Mis televisores", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+        Label("Los que ya has conectado desde este móvil", 21, InkMuted)
+        saved.forEach { entry ->
+            Spacer(Modifier.height(d.dp(16)))
+            TvRow(
+                entry.tv, selectedTv?.let { same(it, entry.tv) } == true,
+                "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
+                secondary = "Quitar", onSecondary = { actions.forgetSaved(entry.tv) }
+            ) { actions.connect(entry.tv); onChosen() }
+        }
+        Spacer(Modifier.height(d.dp(30)))
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Televisores en tu red", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
@@ -1187,36 +1216,59 @@ private fun TvList(
         }
         PillButton(if (scanning) "Buscando…" else "Buscar", Modifier.width(d.dp(180)), onClick = actions.discover)
     }
-    tvs.forEach { tv ->
+    tvs.filter { tv -> saved.none { same(it.tv, tv) } }.forEach { tv ->
         Spacer(Modifier.height(d.dp(16)))
-        val selected = selectedTv?.ip == tv.ip
-        Row(
-            Modifier.fillMaxWidth()
-                .background(if (selected) pal.fg.copy(.07f) else pal.fg.copy(.03f), RoundedCornerShape(d.dp(22)))
-                .border(1.dp, pal.fg.copy(if (selected) .14f else .05f), RoundedCornerShape(d.dp(22)))
-                .padding(d.dp(20)),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon("tv", Modifier.size(d.dp(34), d.dp(30)), if (selected) Ink else InkMuted)
-            Spacer(Modifier.width(d.dp(18)))
-            Column(Modifier.weight(1f)) {
-                Text(tv.name, color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Label("${tv.model} · ${tv.ip}", 20, InkMuted)
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                PillButton("Conectar", Modifier.width(d.dp(150))) { actions.connect(tv); onChosen() }
-                Text(
-                    "Olvidar", color = InkMuted, fontSize = d.sp(20),
-                    modifier = Modifier.padding(top = d.dp(8)).pressable { actions.forget(tv) }.padding(d.dp(6))
-                )
-            }
+        TvRow(
+            tv, selectedTv?.ip == tv.ip, "${tv.model} · ${tv.ip}",
+            secondary = "Olvidar", onSecondary = { actions.forget(tv) }
+        ) { actions.connect(tv); onChosen() }
+    }
+}
+
+private fun lastUsed(time: Long): String {
+    if (time <= 0) return "sin fecha"
+    val mins = (System.currentTimeMillis() - time) / 60_000
+    return when {
+        mins < 1 -> "ahora mismo"
+        mins < 60 -> "hace $mins min"
+        mins < 24 * 60 -> "hace ${mins / 60} h"
+        mins < 48 * 60 -> "ayer"
+        else -> java.text.SimpleDateFormat("d MMM", java.util.Locale("es")).format(java.util.Date(time))
+    }
+}
+
+@Composable
+private fun TvRow(
+    tv: SamsungTv, selected: Boolean, subtitle: String,
+    secondary: String, onSecondary: () -> Unit, onConnect: () -> Unit
+) {
+    val d = LocalDs.current
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (selected) pal.fg.copy(.07f) else pal.fg.copy(.03f), RoundedCornerShape(d.dp(22)))
+            .border(1.dp, pal.fg.copy(if (selected) .14f else .05f), RoundedCornerShape(d.dp(22)))
+            .padding(d.dp(20)),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon("tv", Modifier.size(d.dp(34), d.dp(30)), if (selected) Ink else InkMuted)
+        Spacer(Modifier.width(d.dp(18)))
+        Column(Modifier.weight(1f)) {
+            Text(tv.name, color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Label(subtitle, 20, InkMuted)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            PillButton(if (selected) "Reconectar" else "Conectar", Modifier.width(d.dp(170)), onClick = onConnect)
+            Text(
+                secondary, color = InkMuted, fontSize = d.sp(20),
+                modifier = Modifier.padding(top = d.dp(8)).pressable(description = secondary, onClick = onSecondary).padding(d.dp(6))
+            )
         }
     }
 }
 
 @Composable
 private fun TvPickerDialog(
-    status: String, scanning: Boolean, tvs: List<SamsungTv>, selectedTv: SamsungTv?,
+    status: String, scanning: Boolean, tvs: List<SamsungTv>, saved: List<SavedTv>, selectedTv: SamsungTv?,
     actions: RemoteActions, onDismiss: () -> Unit
 ) {
     val d = LocalDs.current
@@ -1232,7 +1284,7 @@ private fun TvPickerDialog(
                 Label(status, 21, InkMuted)
             }
             Spacer(Modifier.height(d.dp(28)))
-            TvList(scanning, tvs, selectedTv, actions, onChosen = onDismiss)
+            TvList(scanning, tvs, saved, selectedTv, actions, onChosen = onDismiss)
             Spacer(Modifier.height(d.dp(28)))
             PillButton("Cerrar", Modifier.fillMaxWidth(), onClick = onDismiss)
         }

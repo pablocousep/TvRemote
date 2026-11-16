@@ -114,7 +114,11 @@ class SamsungRemote(
                             val apps = (0 until list.length()).mapNotNull { i ->
                                 val o = list.optJSONObject(i) ?: return@mapNotNull null
                                 val id = o.optString("appId").takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                                TvApp(id, o.optString("name").ifBlank { id }, o.optString("icon").takeIf { it.isNotBlank() && it != "null" })
+                                TvApp(
+                                    id, o.optString("name").ifBlank { id },
+                                    o.optString("icon").takeIf { it.isNotBlank() && it != "null" },
+                                    o.optInt("app_type", 0).takeIf { it != 0 }
+                                )
                             }
                             onInstalledApps(apps.sortedBy { it.name.lowercase() })
                         }
@@ -228,7 +232,7 @@ class SamsungRemote(
     }
 
     /** Launches an installed Tizen app (Netflix, Prime Video…) by its Samsung app id. */
-    fun launchApp(appId: String) {
+    fun launchApp(appId: String, actionType: String = "DEEP_LINK") {
         val payload = JSONObject().apply {
             put("method", "ms.channel.emit")
             put("params", JSONObject().apply {
@@ -236,7 +240,7 @@ class SamsungRemote(
                 put("to", "host")
                 put("data", JSONObject().apply {
                     put("appId", appId)
-                    put("action_type", "DEEP_LINK")
+                    put("action_type", actionType)
                 })
             })
         }.toString()
