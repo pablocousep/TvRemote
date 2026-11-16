@@ -1,0 +1,47 @@
+name: Publish release (one-off)
+
+on:
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/workflows/publish-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TVREMOTE_BUILD_NUMBER: "52"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK packages
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk TvRemote-v0.3.52.apk
+          gh release create v0.3.52 TvRemote-v0.3.52.apk --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --latest \
+            --title "TvRemote v0.3.52" \
+            --notes "$(cat <<'NOTES'
+          - Ajustes simplificado: solo televisores guardados (con botón "Añadir televisor") y el tema.
+          - Se quitan el encendido por SmartThings, las pruebas de encendido, el probador de teclas y los interruptores de vibración y volumen (quedan activados).
+          - Tocar la versión al pie de Ajustes busca actualizaciones.
+
+          APK de depuración.
+          NOTES
+          )"
