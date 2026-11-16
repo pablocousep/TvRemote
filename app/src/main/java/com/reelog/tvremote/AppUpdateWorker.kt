@@ -109,6 +109,7 @@ class AppUpdateWorker(
         return 0
     }
 
+    @Suppress("DEPRECATION")
     private fun showUpdateNotification(tag: String, releaseUrl: String): Boolean {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "tvremote_app_updates"
@@ -128,7 +129,6 @@ class AppUpdateWorker(
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(applicationContext, channelId)
         } else {
-            @Suppress("DEPRECATION")
             android.app.Notification.Builder(applicationContext)
         }.setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Nueva versión de TvRemote")
