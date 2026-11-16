@@ -18,6 +18,7 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.io.File
 import java.net.NetworkInterface
 import java.net.Socket
 import java.net.URL
@@ -42,6 +43,27 @@ class SamsungTvDiscovery(private val context: Context) {
                     semaphore.withPermit { probeSamsungTv(ip) }
                 }
             }.awaitAll().filterNotNull().distinctBy { it.ip }.sortedBy { it.name.lowercase() }
+        }
+    }
+
+
+    /**
+     * Resolves the TV's hardware address from Android's neighbour (ARP) table.
+     * The TV must have been reachable on the same local network recently.
+     */
+    fun resolveMacAddress(ip: String): String? {
+        val validMac = Regex("([0-9A-F]{2}:){5}[0-9A-F]{2}")
+        return try {
+            File("/proc/net/arp").useLines { lines ->
+                lines.drop(1).mapNotNull { line ->
+                    val columns = line.trim().split(Regex("\\s+"))
+                    if (columns.size < 4 || columns[0] != ip) return@mapNotNull null
+                    val mac = columns[3].uppercase()
+                    mac.takeIf { it != "00:00:00:00:00:00" && it.matches(validMac) }
+                }.firstOrNull()
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -167,7 +189,7 @@ class SamsungTvDiscovery(private val context: Context) {
                     .firstOrNull()?.uppercase()
                     ?.takeIf { it.matches(Regex("([0-9A-F]{2}:){5}[0-9A-F]{2}")) }
                 if (!type.contains("Samsung", true) && !description.contains("Samsung", true) && !name.contains("Samsung", true)) return null
-                SamsungTv(ip, name, model, mac)
+                SamsungTv(ip, name, model, mac ?: resolveMacAddress(ip))
             } finally {
                 connection.disconnect()
             }
