@@ -182,7 +182,7 @@ val TvApps = listOf(
     TvApp("3201807016597", "Apple TV"),
     TvApp("3201606009684", "Spotify"),
     TvApp("3202301029760", "Max"),
-    TvApp("3201512006963", "Navegador")
+    TvApp("3202010022079", "Navegador")
 )
 
 class RemoteActions(
