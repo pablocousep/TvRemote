@@ -10,8 +10,8 @@ android {
         applicationId = "com.reelog.tvremote"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
+        versionName = System.getenv("GITHUB_RUN_NUMBER")?.let { "0.2.$it" } ?: "0.2.0"
     }
     buildFeatures { compose = true }
     compileOptions {
