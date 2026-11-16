@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.NetworkInterface
 
 object WakeOnLan {
     suspend fun wake(macAddress: String, tvIp: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -17,15 +18,28 @@ object WakeOnLan {
             for (i in 0 until 16) {
                 for (j in 0 until 6) packet[6 + i * 6 + j] = mac[j]
             }
-            val targets = mutableListOf(InetAddress.getByName("255.255.255.255"))
+            val targets = linkedSetOf(InetAddress.getByName("255.255.255.255"))
+            // Use the actual interface broadcast (supports networks other than /24).
+            NetworkInterface.getNetworkInterfaces()?.toList()?.forEach { networkInterface ->
+                networkInterface.interfaceAddresses.forEach { interfaceAddress ->
+                    val broadcast = interfaceAddress.broadcast
+                    if (broadcast != null && interfaceAddress.address is java.net.Inet4Address) {
+                        targets += broadcast
+                    }
+                }
+            }
+            // Also try the TV's conventional /24 broadcast as a fallback.
             val parts = tvIp.split(".").mapNotNull { it.toIntOrNull() }
             if (parts.size == 4 && parts.all { it in 0..255 }) {
-                targets += InetAddress.getByName(parts[0].toString() + "." + parts[1] + "." + parts[2] + ".255")
+                targets += InetAddress.getByName("${parts[0]}.${parts[1]}.${parts[2]}.255")
             }
             DatagramSocket().use { socket ->
                 socket.broadcast = true
-                targets.distinctBy { it.hostAddress }.forEach { address ->
-                    socket.send(DatagramPacket(packet, packet.size, address, 9))
+                repeat(3) {
+                    targets.forEach { address ->
+                        socket.send(DatagramPacket(packet, packet.size, address, 9))
+                    }
+                    if (it < 2) Thread.sleep(120)
                 }
             }
         }
