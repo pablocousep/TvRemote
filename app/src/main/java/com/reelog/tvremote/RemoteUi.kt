@@ -1464,6 +1464,23 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .22f), h * (.88f - .22f)), Size(w * .44f, h * .44f), style = stroke)
                 drawCircle(tint, m * .06f, p(.11f, .85f))
             }
+            "theme" -> {
+                drawCircle(tint, m * .38f, p(.5f, .5f), style = stroke)
+                drawCircle(tint, m * .075f, p(.34f, .34f))
+                drawCircle(tint, m * .075f, p(.66f, .34f))
+                drawCircle(tint, m * .075f, p(.34f, .66f))
+                drawCircle(tint, m * .075f, p(.66f, .66f))
+            }
+            "download" -> {
+                line(.5f, .08f, .5f, .62f)
+                poly(.22f to .42f, .5f to .70f, .78f to .42f)
+                poly(.12f to .78f, .12f to .92f, .88f to .92f, .88f to .78f)
+            }
+            "info" -> {
+                drawCircle(tint, m * .42f, p(.5f, .5f), style = stroke)
+                drawCircle(tint, m * .045f, p(.5f, .32f))
+                line(.5f, .46f, .5f, .72f)
+            }
             "settings" -> {
                 val c = Offset(w / 2, h / 2)
                 val outer = m * .46f; val inner = m * .35f
