@@ -205,7 +205,10 @@ class RemoteActions(
     val setHardwareVolume: (Boolean) -> Unit = {},
     val setTheme: (String) -> Unit = {},
     val saveSmartThingsToken: (String) -> Unit = {},
-    val chooseSmartThingsDevice: (StDevice) -> Unit = {}
+    val chooseSmartThingsDevice: (StDevice) -> Unit = {},
+    val checkForUpdates: () -> Unit = {},
+    val startUpdate: () -> Unit = {},
+    val dismissUpdate: () -> Unit = {}
 )
 
 /** Snapshot of everything the screen shows. */
@@ -228,7 +231,12 @@ data class RemoteUiState(
     val stConfigured: Boolean = false,
     val stDevice: StDevice? = null,
     val stDevices: List<StDevice> = emptyList(),
-    val appIcons: Map<String, ImageBitmap> = emptyMap()
+    val appIcons: Map<String, ImageBitmap> = emptyMap(),
+    val versionName: String = "",
+    val update: UpdateInfo? = null,
+    val updatePrompt: Boolean = false,
+    val updateChecking: Boolean = false,
+    val updateProgress: Float? = null
 )
 
 // ---------------------------------------------------------------------------
@@ -293,7 +301,13 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
 
                 ConnectionLostBanner(state.connectionLost, state.connecting, actions.reconnect)
                 if (!state.connectionLost) StatusToast(state.status, state.statusSerial)
-                BottomNav(tab) { tab = it }
+                BottomNav(tab, settingsBadge = state.update != null) { tab = it }
+            }
+        }
+
+        if (state.updatePrompt && state.update != null) {
+            CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
+                UpdateDialog(state.update, state.updateProgress, actions)
             }
         }
 
@@ -918,6 +932,7 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 actions.setHardwareVolume(it)
             }
         }
+        Card { UpdatesCard(state, actions) }
         Card { KeyTester(actions) }
         Label(
             "TvRemote · Samsung Smart TV (Tizen 2016+)\nEl móvil y el televisor deben estar en la misma Wi-Fi.",
@@ -993,6 +1008,72 @@ private fun SmartThingsCard(state: RemoteUiState, actions: RemoteActions) {
         Spacer(Modifier.height(d.dp(12)))
         val selected = state.stDevice?.id == dev.id
         Segment(dev.name.ifBlank { dev.id.take(8) }, selected, Modifier.fillMaxWidth()) { actions.chooseSmartThingsDevice(dev) }
+    }
+}
+
+@Composable
+private fun UpdatesCard(state: RemoteUiState, actions: RemoteActions) {
+    val d = LocalDs.current
+    val update = state.update
+    Text("Actualizaciones", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+    Label(
+        "Versión instalada: ${state.versionName}" + (update?.let { " · disponible ${it.tag}" } ?: ""),
+        20, if (update != null) Ink else InkMuted
+    )
+    Spacer(Modifier.height(d.dp(16)))
+    if (state.updateProgress != null) {
+        UpdateProgress(state.updateProgress)
+    } else if (update != null) {
+        PillButton("Actualizar a ${update.tag}", Modifier.fillMaxWidth(), onClick = actions.startUpdate)
+    } else {
+        PillButton(if (state.updateChecking) "Comprobando…" else "Buscar actualizaciones", Modifier.fillMaxWidth(),
+            onClick = actions.checkForUpdates)
+    }
+}
+
+@Composable
+private fun UpdateProgress(progress: Float) {
+    val d = LocalDs.current
+    val shown by animateFloatAsState(progress, label = "dl")
+    Column {
+        Label("Descargando… ${(progress * 100).toInt()} %", 21, InkMuted)
+        Spacer(Modifier.height(d.dp(10)))
+        Box(Modifier.fillMaxWidth().height(d.dp(12)).background(pal.fg.copy(.08f), CircleShape)) {
+            Box(Modifier.fillMaxWidth(shown).fillMaxHeight().background(OnlineGreen, CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun UpdateDialog(update: UpdateInfo, progress: Float?, actions: RemoteActions) {
+    val d = LocalDs.current
+    Dialog(onDismissRequest = { if (progress == null) actions.dismissUpdate() }) {
+        Column(
+            Modifier.fillMaxWidth().background(pal.dialogBg, RoundedCornerShape(d.dp(40)))
+                .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(40))).padding(d.dp(36))
+        ) {
+            Text("Nueva versión disponible", color = Ink, fontSize = d.sp(34), fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(d.dp(6)))
+            Label(
+                "${update.tag}" + (if (update.sizeBytes > 0) " · %.1f MB".format(update.sizeBytes / 1_048_576.0) else ""),
+                22, InkMuted
+            )
+            if (update.notes.isNotBlank()) {
+                Spacer(Modifier.height(d.dp(20)))
+                Column(Modifier.heightIn(max = d.dp(520)).verticalScroll(rememberScrollState())) {
+                    Text(update.notes, color = Ink.copy(.85f), fontSize = d.sp(21))
+                }
+            }
+            Spacer(Modifier.height(d.dp(28)))
+            if (progress != null) {
+                UpdateProgress(progress)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(d.dp(16))) {
+                    PillButton("Más tarde", Modifier.weight(1f), onClick = actions.dismissUpdate)
+                    PillButton("Actualizar", Modifier.weight(1f), onClick = actions.startUpdate)
+                }
+            }
+        }
     }
 }
 
@@ -1181,7 +1262,7 @@ private fun PageDots(current: Int, offset: Float, top: Number) {
 private val NavLabels = listOf("Mando", "Aplicaciones", "Transmitir", "Ajustes")
 
 @Composable
-private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
+private fun BottomNav(selected: Int, settingsBadge: Boolean = false, onSelect: (Int) -> Unit) {
     val d = LocalDs.current
     val shape = RoundedCornerShape(d.dp(53))
     val slot = 623f / 4f
@@ -1207,13 +1288,13 @@ private fun BottomNav(selected: Int, onSelect: (Int) -> Unit) {
                 .border(1.dp, Brush.verticalGradient(listOf(pal.fg.copy(.14f), pal.fg.copy(.03f))), CircleShape)
         )
         listOf("remote", "apps", "cast", "settings").forEachIndexed { i, icon ->
-            NavItem(icon, NavLabels[i], i == selected, Modifier.at(d, i * slot, 0, slot, 105)) { onSelect(i) }
+            NavItem(icon, NavLabels[i], i == selected, Modifier.at(d, i * slot, 0, slot, 105), badge = settingsBadge && i == 3) { onSelect(i) }
         }
     }
 }
 
 @Composable
-private fun NavItem(icon: String, label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun NavItem(icon: String, label: String, selected: Boolean, modifier: Modifier, badge: Boolean = false, onClick: () -> Unit) {
     val d = LocalDs.current
     var pressed by remember { mutableStateOf(false) }
     val bounce = remember { Animatable(1f) }
@@ -1240,6 +1321,10 @@ private fun NavItem(icon: String, label: String, selected: Boolean, modifier: Mo
                 translationY = lift * d.s * density
             },
             tint
+        )
+        if (badge) Box(
+            Modifier.offset(d.dp(18), d.dp(-18)).size(d.dp(12)).background(OnlineGreen, CircleShape)
+                .border(d.dp(2), pal.navBg, CircleShape)
         )
     }
 }

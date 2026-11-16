@@ -8,23 +8,13 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - **Artifacts → `TvRemote-screenshots`**: capturas de todas las pantallas (pruebas con Robolectric).
 - Los push a `main` publican además un release `v0.3.<n>` con el APK.
 
-### APK firmado (opcional)
-Si existen estos secretos en *Settings → Secrets and variables → Actions*, CI genera un APK de release firmado y optimizado (R8) en lugar del de depuración:
-
-| Secreto | Valor |
-| --- | --- |
-| `TVREMOTE_KEYSTORE_BASE64` | El keystore en base64 (`base64 -w0 tvremote.jks`) |
-| `TVREMOTE_KEYSTORE_PASSWORD` | Contraseña del keystore |
-| `TVREMOTE_KEY_ALIAS` | Alias de la clave |
-| `TVREMOTE_KEY_PASSWORD` | Contraseña de la clave |
-
-Para crear el keystore:
-
-```bash
-keytool -genkeypair -v -keystore tvremote.jks -alias tvremote -keyalg RSA -keysize 4096 -validity 10000
-```
-
-Guarda el keystore en un lugar seguro: sin él no podrás publicar actualizaciones que se instalen encima. Al pasar del APK de depuración al firmado hay que desinstalar la app una vez.
+### Firma y actualizaciones desde la app
+- Todas las compilaciones se firman con la clave compartida `app/signing/tvremote.jks` (incluida en el repositorio a propósito). Así cada versión nueva se instala encima de la anterior y la app puede actualizarse sola.
+- Al abrirse, la app consulta el último release de GitHub como mucho cada 6 horas. Si hay uno más nuevo, ofrece descargarlo e instalarlo. También se puede comprobar en *Ajustes › Actualizaciones*.
+- La primera vez Android pide permitir que TvRemote instale apps.
+- Los releases usan la etiqueta `v0.3.<n>`, donde `<n>` es el `versionCode` del APK.
+- Al ser pública, cualquiera podría firmar un APK con esa clave. La app solo descarga de los releases de este repositorio, así que no instales APKs de TvRemote de otras fuentes.
+- Si en el futuro se configura una clave privada mediante los secretos `TVREMOTE_KEYSTORE_BASE64`, `TVREMOTE_KEYSTORE_PASSWORD`, `TVREMOTE_KEY_ALIAS` y `TVREMOTE_KEY_PASSWORD`, CI firmará el release con ella. Ese cambio de clave obliga a desinstalar la app una vez.
 
 ## Funciones
 - Mando con cruceta, OK, volumen, canales, multimedia, atrás e inicio; tres accesos directos configurables (mantén pulsada una app en *Aplicaciones* para fijarla).
@@ -35,6 +25,7 @@ Guarda el keystore en un lugar seguro: sin él no podrás publicar actualizacion
 - Botones de volumen del móvil controlan la TV con la app abierta.
 - Widget de pantalla de inicio (encender, volumen, silencio) y botón en Ajustes rápidos para encender o apagar.
 - Si la TV cambia de IP, la app la vuelve a encontrar por su MAC.
+- Se actualiza sola desde los releases de GitHub.
 
 ## Encendido
 1. Si la TV responde en la red (encendida o en reposo con red), se envía `KEY_POWER`.

@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
             setHardwareVolume = vm::setHardwareVolume,
             setTheme = vm::setTheme,
             saveSmartThingsToken = vm::saveSmartThingsToken,
-            chooseSmartThingsDevice = vm::chooseSmartThingsDevice
+            chooseSmartThingsDevice = vm::chooseSmartThingsDevice,
+            checkForUpdates = { vm.checkForUpdates() },
+            startUpdate = vm::startUpdate,
+            dismissUpdate = vm::dismissUpdate
         )
 
         setContent {
@@ -63,7 +66,12 @@ class MainActivity : ComponentActivity() {
                 stConfigured = vm.stConfigured.value,
                 stDevice = vm.stDevice.value,
                 stDevices = vm.stDevices.toList(),
-                appIcons = vm.appIcons.toMap()
+                appIcons = vm.appIcons.toMap(),
+                versionName = vm.versionName,
+                update = vm.update.value,
+                updatePrompt = vm.updatePrompt.value,
+                updateChecking = vm.updateChecking.value,
+                updateProgress = vm.updateProgress.value
             )
             RemoteScreen(state, actions)
         }

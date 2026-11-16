@@ -41,6 +41,13 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val stDevice = mutableStateOf(store.smartThingsDevice)
     val stDevices = mutableStateListOf<StDevice>()
 
+    val versionName: String = Updater.currentVersionName(app)
+    val update = mutableStateOf<UpdateInfo?>(null)
+    val updatePrompt = mutableStateOf(false)
+    val updateChecking = mutableStateOf(false)
+    val updateProgress = mutableStateOf<Float?>(null)
+    private var downloadedApk: java.io.File? = null
+
     private var userDisconnected = false
     private var powerJob: Job? = null
 
@@ -61,6 +68,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         selectedTv.value?.let { connect(it) }
+        // Quietly look for a new release at most every 6 hours.
+        if (System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) checkForUpdates(silent = true)
     }
 
     private fun onConnection(up: Boolean) {
@@ -269,6 +278,57 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         }
         pinnedApps.clear(); pinnedApps.addAll(current)
         store.pinnedApps = current
+    }
+
+    // --- Updates ------------------------------------------------------------------------------
+
+    fun checkForUpdates(silent: Boolean = false) {
+        if (updateChecking.value) return
+        updateChecking.value = true
+        viewModelScope.launch {
+            Updater.check(getApplication())
+                .onSuccess { info ->
+                    store.lastUpdateCheck = System.currentTimeMillis()
+                    update.value = info
+                    when {
+                        info == null -> if (!silent) setStatus("Tienes la última versión ($versionName)")
+                        !silent || store.dismissedUpdate != info.tag -> updatePrompt.value = true
+                    }
+                }
+                .onFailure { if (!silent) setStatus("No se pudo comprobar: ${it.localizedMessage}") }
+            updateChecking.value = false
+        }
+    }
+
+    fun dismissUpdate() {
+        updatePrompt.value = false
+        update.value?.let { store.dismissedUpdate = it.tag }
+    }
+
+    fun startUpdate() {
+        val info = update.value ?: return
+        val app = getApplication<Application>()
+        if (!Updater.canInstall(app)) {
+            setStatus("Permite a TvRemote instalar apps y vuelve a pulsar Actualizar")
+            Updater.openInstallPermission(app)
+            return
+        }
+        downloadedApk?.takeIf { it.exists() && it.name.contains(info.tag) }?.let {
+            Updater.install(app, it)
+            return
+        }
+        if (updateProgress.value != null) return
+        updateProgress.value = 0f
+        viewModelScope.launch {
+            Updater.download(app, info) { p -> viewModelScope.launch { updateProgress.value = p } }
+                .onSuccess { file ->
+                    downloadedApk = file
+                    updatePrompt.value = false
+                    Updater.install(app, file)
+                }
+                .onFailure { setStatus("No se pudo descargar: ${it.localizedMessage}") }
+            updateProgress.value = null
+        }
     }
 
     override fun onCleared() {

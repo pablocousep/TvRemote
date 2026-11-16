@@ -52,6 +52,15 @@ class TvStore(context: Context) {
             JSONArray(v.take(3).map { JSONObject().put("id", it.id).put("name", it.name) }).toString()
         ).apply()
 
+    var lastUpdateCheck: Long
+        get() = prefs.getLong("last_update_check", 0L)
+        set(v) = prefs.edit().putLong("last_update_check", v).apply()
+
+    /** Release the user chose to skip in the automatic prompt. */
+    var dismissedUpdate: String?
+        get() = prefs.getString("dismissed_update", null)
+        set(v) = prefs.edit().putString("dismissed_update", v).apply()
+
     var smartThingsToken: String?
         get() = prefs.getString("st_token", null)?.takeIf { it.isNotBlank() }
         set(v) = prefs.edit().putString("st_token", v?.trim()).apply()

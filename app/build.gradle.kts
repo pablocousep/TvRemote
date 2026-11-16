@@ -4,8 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Release signing comes from the environment (GitHub secrets in CI). Without it the
-// release build is produced unsigned and CI publishes the debug APK instead.
+// Optional private release key from the environment (GitHub secrets). Without it every
+// build is signed with the shared key in app/signing so updates install over each other.
 val keystorePath: String? = System.getenv("TVREMOTE_KEYSTORE")
 val buildNumber = (System.getenv("TVREMOTE_BUILD_NUMBER") ?: System.getenv("GITHUB_RUN_NUMBER"))?.toIntOrNull() ?: 1
 
@@ -20,6 +20,14 @@ android {
         versionName = "0.3.$buildNumber"
     }
     signingConfigs {
+        // Shared key committed to the repo so every build (local or CI) has the same
+        // signature and in-app updates can install over the previous version.
+        create("shared") {
+            storeFile = file("signing/tvremote.jks")
+            storePassword = "tvremote"
+            keyAlias = "tvremote"
+            keyPassword = "tvremote"
+        }
         if (keystorePath != null) {
             create("release") {
                 storeFile = file(keystorePath)
@@ -34,7 +42,10 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (keystorePath != null) signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(if (keystorePath != null) "release" else "shared")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
     buildFeatures { compose = true }
