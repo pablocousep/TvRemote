@@ -10,6 +10,8 @@ Cada push a `main` y cada ejecución manual de GitHub Actions compilan un APK de
 - Comunicación WSS por el puerto 8002.
 - Emparejamiento con token y fijación TOFU del certificado por IP.
 - Requiere que el móvil y el televisor estén en la misma red local.
-- No incluye todavía descubrimiento automático, touchpad, Wake-on-LAN ni lista de aplicaciones.
+- Descubrimiento automático de televisores Samsung en la red local.
+- Wake-on-LAN automático: obtiene la MAC de la API del televisor o de la tabla ARP del dispositivo y guarda el dato para próximos encendidos.
+- El envío Wake-on-LAN utiliza las direcciones broadcast de las interfaces de red y reintenta el paquete mágico.
 
 La compatibilidad depende del modelo y firmware del televisor. No se ha validado aún en un televisor físico; el APK de CI es una compilación de depuración, no una certificación de compatibilidad.
