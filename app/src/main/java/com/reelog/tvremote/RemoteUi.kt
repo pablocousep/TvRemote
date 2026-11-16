@@ -885,22 +885,85 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
     val d = LocalDs.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionTitle("Ajustes")
-        Card { TvList(state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = {}) }
+        // Saved televisions
         Card {
-            Text("Tema", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(d.dp(14)))
-            Row(horizontalArrangement = Arrangement.spacedBy(d.dp(12))) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsIcon("tv")
+                Spacer(Modifier.width(d.dp(20)))
+                Column(Modifier.weight(1f)) {
+                    Text("Televisores guardados", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
+                    Label("Gestiona tus televisores conectados", 21, InkMuted)
+                }
+                Icon("chevronRight", Modifier.size(d.dp(22)), InkMuted)
+            }
+            Spacer(Modifier.height(d.dp(24)))
+            TvList(state.scanning, state.tvs, state.savedTvs, state.selectedTv, actions, onChosen = {})
+        }
+        // Appearance
+        Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsIcon("theme")
+                Spacer(Modifier.width(d.dp(20)))
+                Column {
+                    Text("Tema", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
+                    Label("Elige el aspecto de la aplicación", 21, InkMuted)
+                }
+            }
+            Spacer(Modifier.height(d.dp(24)))
+            Row(horizontalArrangement = Arrangement.spacedBy(d.dp(10))) {
                 listOf("dark" to "Oscuro", "light" to "Claro", "system" to "Sistema").forEach { (value, label) ->
                     Segment(label, state.theme == value, Modifier.weight(1f)) { actions.setTheme(value) }
                 }
             }
         }
-        Text(
-            "TvRemote ${state.versionName}" + if (state.updateChecking) " · comprobando…" else " · buscar actualizaciones",
-            color = InkMuted.copy(alpha = .7f), fontSize = d.sp(20),
-            modifier = Modifier.padding(start = d.dp(46), top = d.dp(4), bottom = d.dp(40))
-                .pressable(description = "Buscar actualizaciones", onClick = actions.checkForUpdates).padding(d.dp(6))
-        )
+        // Updates
+        Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsIcon("skip")
+                Spacer(Modifier.width(d.dp(20)))
+                Column {
+                    Text("Actualizaciones", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
+                    Label("Mantén la app siempre al día", 21, InkMuted)
+                }
+            }
+            Spacer(Modifier.height(d.dp(22)))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(d.dp(24)))
+                    .background(pal.fg.copy(.035f))
+                    .border(1.dp, pal.fg.copy(.09f), RoundedCornerShape(d.dp(24)))
+                    .pressable(description = "Buscar actualizaciones", onClick = actions.checkForUpdates)
+                    .padding(horizontal = d.dp(24), vertical = d.dp(22)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon("download", Modifier.size(d.dp(30)), InkMuted)
+                Spacer(Modifier.width(d.dp(20)))
+                Text(
+                    if (state.updateChecking) "Comprobando actualizaciones…" else "Buscar actualizaciones",
+                    color = Ink, fontSize = d.sp(23), fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon("chevronRight", Modifier.size(d.dp(22)), InkMuted)
+            }
+        }
+        Row(
+            Modifier.padding(start = d.dp(48), top = d.dp(4), bottom = d.dp(36)),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon("info", Modifier.size(d.dp(24)), InkMuted)
+            Spacer(Modifier.width(d.dp(14)))
+            Text("TvRemote ${state.versionName}", color = InkMuted, fontSize = d.sp(20))
+        }
+    }
+}
+
+@Composable
+private fun SettingsIcon(kind: String) {
+    val d = LocalDs.current
+    Box(
+        Modifier.size(d.dp(78)).background(pal.fg.copy(.075f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(kind, Modifier.size(d.dp(38)), Ink)
     }
 }
 
@@ -965,9 +1028,11 @@ private fun UpdateDialog(update: UpdateInfo, progress: Float?, actions: RemoteAc
 @Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) {
     val d = LocalDs.current
+    val shape = RoundedCornerShape(d.dp(32))
     Column(
         Modifier.padding(horizontal = d.dp(46)).padding(bottom = d.dp(24)).fillMaxWidth()
-            .glass(RoundedCornerShape(d.dp(32))).padding(d.dp(32)),
+            .clip(shape).background(pal.surfaceBottom.copy(alpha = .92f))
+            .border(1.dp, pal.fg.copy(.075f), shape).padding(d.dp(28)),
         content = content
     )
 }
@@ -983,24 +1048,29 @@ private fun TvList(
     // Searching is only shown after the user asks to add a TV.
     var adding by rememberSaveable { mutableStateOf(false) }
 
-    Text("Televisores guardados", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-    Label(
-        if (saved.isEmpty()) "Aún no hay ninguno. Añade tu televisor para empezar."
-        else "Los que ya has conectado desde este móvil",
-        21, InkMuted
-    )
+    if (saved.isEmpty()) {
+        Label("Aún no hay televisores guardados. Añade uno para empezar.", 20, InkMuted)
+    }
     saved.forEach { entry ->
-        Spacer(Modifier.height(d.dp(16)))
+        Spacer(Modifier.height(d.dp(14)))
         TvRow(
             entry.tv, selectedTv?.let { same(it, entry.tv) } == true,
             "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
             secondary = "Quitar", onSecondary = { actions.forgetSaved(entry.tv) }
         ) { actions.connect(entry.tv); onChosen() }
     }
-    Spacer(Modifier.height(d.dp(24)))
-    PillButton(
-        if (scanning) "Buscando…" else "Añadir televisor", Modifier.fillMaxWidth()
-    ) { adding = true; actions.discover() }
+    Spacer(Modifier.height(d.dp(18)))
+    Row(
+        Modifier.fillMaxWidth().height(d.dp(70)).clip(RoundedCornerShape(d.dp(35)))
+            .background(pal.fg.copy(.055f))
+            .border(1.dp, pal.fg.copy(.07f), RoundedCornerShape(d.dp(35)))
+            .pressable(description = "Añadir televisor", onClick = { adding = true; actions.discover() }),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon("plus", Modifier.size(d.dp(26)), Ink)
+        Spacer(Modifier.width(d.dp(16)))
+        Label(if (scanning) "Buscando televisores…" else "Añadir televisor", 23)
+    }
 
     if (adding && !scanning) {
         val fresh = tvs.filter { tv -> saved.none { same(it.tv, tv) } }
@@ -1054,8 +1124,8 @@ private fun TvRow(
         Column(horizontalAlignment = Alignment.End) {
             PillButton(if (selected) "Reconectar" else "Conectar", Modifier.width(d.dp(170)), onClick = onConnect)
             Text(
-                secondary, color = InkMuted, fontSize = d.sp(20),
-                modifier = Modifier.padding(top = d.dp(8)).pressable(description = secondary, onClick = onSecondary).padding(d.dp(6))
+                secondary, color = InkMuted, fontSize = d.sp(19),
+                modifier = Modifier.padding(top = d.dp(6)).pressable(description = secondary, onClick = onSecondary).padding(d.dp(5))
             )
         }
     }
