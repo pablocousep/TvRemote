@@ -30,12 +30,14 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
                 store.lastUpdateCheck = System.currentTimeMillis()
                 if (info == null) {
                     store.pendingUpdateTag = null
-                } else {
+                } else if (store.dismissedUpdate != info.tag) {
                     store.pendingUpdateTag = info.tag
                     if (store.notifiedUpdateTag != info.tag) {
                         notifyUpdate(applicationContext, info.tag)
                         store.notifiedUpdateTag = info.tag
                     }
+                } else {
+                    store.pendingUpdateTag = null
                 }
                 Result.success()
             },
