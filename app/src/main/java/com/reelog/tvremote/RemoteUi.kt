@@ -617,6 +617,7 @@ fun brandOf(app: TvApp): String? {
         app.id == "3201606009684" || "spotify" in n -> "spotify"
         app.id == "3201807016597" || "apple tv" in n -> "appletv"
         app.id == "3202301029760" || n == "max" || "hbo" in n -> "max"
+        app.id in setOf("3202010022079", "3201907018784", "org.tizen.browser") || "navegador" in n || "internet" == n -> "browser"
         else -> null
     }
 }
