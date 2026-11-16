@@ -979,32 +979,43 @@ private fun TvList(
     val d = LocalDs.current
     fun same(a: SamsungTv, b: SamsungTv) =
         (a.macAddress != null && a.macAddress.equals(b.macAddress, true)) || a.ip == b.ip
-    if (saved.isNotEmpty()) {
-        Text("Mis televisores", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-        Label("Los que ya has conectado desde este móvil", 21, InkMuted)
-        saved.forEach { entry ->
-            Spacer(Modifier.height(d.dp(16)))
-            TvRow(
-                entry.tv, selectedTv?.let { same(it, entry.tv) } == true,
-                "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
-                secondary = "Quitar", onSecondary = { actions.forgetSaved(entry.tv) }
-            ) { actions.connect(entry.tv); onChosen() }
-        }
-        Spacer(Modifier.height(d.dp(30)))
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Televisores en tu red", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
-            Label(if (scanning) "Buscando…" else "${tvs.size} encontrado(s)", 21, InkMuted)
-        }
-        PillButton(if (scanning) "Buscando…" else "Buscar", Modifier.width(d.dp(180)), onClick = actions.discover)
-    }
-    tvs.filter { tv -> saved.none { same(it.tv, tv) } }.forEach { tv ->
+    // Searching is only shown after the user asks to add a TV.
+    var adding by rememberSaveable { mutableStateOf(false) }
+
+    Text("Televisores guardados", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.Medium)
+    Label(
+        if (saved.isEmpty()) "Aún no hay ninguno. Añade tu televisor para empezar."
+        else "Los que ya has conectado desde este móvil",
+        21, InkMuted
+    )
+    saved.forEach { entry ->
         Spacer(Modifier.height(d.dp(16)))
         TvRow(
-            tv, selectedTv?.ip == tv.ip, "${tv.model} · ${tv.ip}",
-            secondary = "Olvidar", onSecondary = { actions.forget(tv) }
-        ) { actions.connect(tv); onChosen() }
+            entry.tv, selectedTv?.let { same(it, entry.tv) } == true,
+            "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
+            secondary = "Quitar", onSecondary = { actions.forgetSaved(entry.tv) }
+        ) { actions.connect(entry.tv); onChosen() }
+    }
+    Spacer(Modifier.height(d.dp(24)))
+    PillButton(
+        if (scanning) "Buscando…" else "Añadir televisor", Modifier.fillMaxWidth()
+    ) { adding = true; actions.discover() }
+
+    if (adding && !scanning) {
+        val fresh = tvs.filter { tv -> saved.none { same(it.tv, tv) } }
+        Spacer(Modifier.height(d.dp(14)))
+        Label(
+            if (fresh.isEmpty()) "No se encontraron televisores nuevos. Comprueba que estén encendidos y en la misma Wi-Fi."
+            else "Elige el televisor que quieres añadir:",
+            20, InkMuted
+        )
+        fresh.forEach { tv ->
+            Spacer(Modifier.height(d.dp(16)))
+            TvRow(
+                tv, false, "${tv.model} · ${tv.ip}",
+                secondary = "Cerrar", onSecondary = { adding = false }
+            ) { actions.connect(tv); adding = false; onChosen() }
+        }
     }
 }
 

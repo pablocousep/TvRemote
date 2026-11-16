@@ -21,7 +21,7 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - Páginas deslizables: mando, teclado numérico con teclas de color, y touchpad con envío y pegado de texto.
 - *Aplicaciones*: lista de apps instaladas que comparte la TV (según modelo) o las más comunes.
 - *Transmitir*: duplicar pantalla del móvil y cambio de entrada (TV, HDMI 1–4).
-- *Ajustes*: lista de televisores (guardados y encontrados en la red) y tema oscuro/claro/sistema.
+- *Ajustes*: televisores guardados (con botón para añadir uno nuevo) y tema oscuro/claro/sistema.
 - Botones de volumen del móvil controlan la TV con la app abierta.
 - Widget de pantalla de inicio (encender, volumen, silencio) y botón en Ajustes rápidos para encender o apagar.
 - Guarda los televisores a los que te has conectado (*Mis televisores*, con la fecha de último uso).
