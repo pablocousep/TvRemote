@@ -88,8 +88,8 @@ class AppUpdateWorker(
             }
 
             val prefs = applicationContext.getSharedPreferences("tvremote_updates", Context.MODE_PRIVATE)
-            if (prefs.getString("last_notified_tag", null) != latestTag) {
-                showUpdateNotification(latestTag, releaseUrl)
+            if (prefs.getString("last_notified_tag", null) != latestTag &&
+                showUpdateNotification(latestTag, releaseUrl)) {
                 prefs.edit().putString("last_notified_tag", latestTag).apply()
             }
             Result.success()
@@ -109,7 +109,7 @@ class AppUpdateWorker(
         return 0
     }
 
-    private fun showUpdateNotification(tag: String, releaseUrl: String) {
+    private fun showUpdateNotification(tag: String, releaseUrl: String): Boolean {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "tvremote_app_updates"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -137,10 +137,12 @@ class AppUpdateWorker(
             .setAutoCancel(true)
             .build()
 
-        if (Build.VERSION.SDK_INT < 33 ||
-            applicationContext.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+        if (Build.VERSION.SDK_INT >= 33 &&
+            applicationContext.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            manager.notify(4102, notification)
+            return false
         }
+        manager.notify(4102, notification)
+        return true
     }
 }
