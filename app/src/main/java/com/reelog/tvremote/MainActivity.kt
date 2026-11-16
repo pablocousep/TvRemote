@@ -294,8 +294,16 @@ private fun RemoteHome(
                         TvChoice(tv, selectedTv?.ip == tv.ip,
                             onConnect = {
                                 selectedTv = tv
-                                tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
-                                    .putString("model", tv.model).putString("mac", tv.macAddress).apply()
+                                val editor = tvPrefs.edit()
+                                    .putString("ip", tv.ip)
+                                    .putString("name", tv.name)
+                                    .putString("model", tv.model)
+                                if (tv.macAddress != null) {
+                                    editor.putString("mac", tv.macAddress)
+                                } else if (selectedTv?.ip != tv.ip) {
+                                    editor.remove("mac")
+                                }
+                                editor.apply()
                                 onConnect(tv)
                                 showDevices = false
                             },
