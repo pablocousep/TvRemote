@@ -71,8 +71,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         selectedTv.value?.let { connect(it, auto = true) }
-        // Quietly look for a new release at most every 6 hours.
-        if (System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) checkForUpdates(silent = true)
+        // Schedule a network-aware check every six hours, including while the app is closed.
+        UpdateCheckWorker.schedule(app)
+        when {
+            store.pendingUpdateTag != null -> checkForUpdates(silent = false)
+            System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L -> checkForUpdates(silent = true)
+        }
     }
 
     /** True when a switched-off TV can be woken, so "no connection" is not an error. */
@@ -165,16 +169,31 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     fun connect(tv: SamsungTv, auto: Boolean = false) {
         userDisconnected = false
         connectionLost.value = false
-        if (selectedTv.value?.ip != tv.ip) {
-            installedApps.clear()
-            store.selectedTv = tv
-        }
-        selectedTv.value = tv
+        val previous = selectedTv.value
+        val discoveredMac = tv.macAddress?.let(WakeOnLan::normalizeMac)
+        val enrichedTv = tv.copy(
+            macAddress = discoveredMac ?: previous?.takeIf { it.ip == tv.ip }?.macAddress
+        )
+        if (previous?.ip != enrichedTv.ip) installedApps.clear()
+        // Persist the discovered MAC even when the selected TV keeps the same IP.
+        store.selectedTv = enrichedTv
+        selectedTv.value = enrichedTv
         connecting.value = true
         viewModelScope.launch {
             // On launch the TV is often just asleep: don't scan the network for a new IP then.
-            val ok = session.connect(tv, relocate = !auto)
+            val ok = session.connect(enrichedTv, relocate = !auto)
             connecting.value = false
+            if (ok) {
+                // Some Samsung models expose their MAC only through the REST device endpoint.
+                val mac = enrichedTv.macAddress ?: WakeOnLan.probe(enrichedTv.ip, 1200).mac
+                if (mac != null) {
+                    val updated = enrichedTv.copy(macAddress = mac)
+                    store.selectedTv = updated
+                    store.rememberTv(updated)
+                    selectedTv.value = updated
+                    savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+                }
+            }
             if (!ok) {
                 if (canWake()) {
                     tvAsleep.value = true
@@ -272,6 +291,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             Updater.check(getApplication())
                 .onSuccess { info ->
                     store.lastUpdateCheck = System.currentTimeMillis()
+                    store.pendingUpdateTag = null
                     update.value = info
                     when {
                         info == null -> if (!silent) setStatus("Tienes la última versión ($versionName)")

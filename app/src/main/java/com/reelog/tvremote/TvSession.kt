@@ -96,6 +96,16 @@ class TvStore(context: Context) {
         get() = prefs.getLong("last_update_check", 0L)
         set(v) = prefs.edit().putLong("last_update_check", v).apply()
 
+    /** Update found by the background worker; the app presents the regular in-app prompt. */
+    var pendingUpdateTag: String?
+        get() = prefs.getString("pending_update_tag", null)
+        set(v) = prefs.edit().putString("pending_update_tag", v).apply()
+
+    /** Prevent repeated notifications for the same release. */
+    var notifiedUpdateTag: String?
+        get() = prefs.getString("notified_update_tag", null)
+        set(v) = prefs.edit().putString("notified_update_tag", v).apply()
+
     /** Release the user chose to skip in the automatic prompt. */
     var dismissedUpdate: String?
         get() = prefs.getString("dismissed_update", null)
