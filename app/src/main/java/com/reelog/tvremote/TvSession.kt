@@ -124,7 +124,9 @@ val KnownAppIds = mapOf(
     "youtube" to listOf("111299001912"),
     "spotify" to listOf("3201606009684"),
     "appletv" to listOf("3201807016597"),
-    "max" to listOf("3202301029760")
+    "max" to listOf("3202301029760"),
+    // Samsung Internet / browser IDs vary by Tizen generation.
+    "browser" to listOf("3202010022079", "3201907018784", "org.tizen.browser")
 )
 
 class TvSession(
