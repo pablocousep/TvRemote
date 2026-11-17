@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
             disconnect = vm::disconnect,
             openCastSettings = ::openCastSettings,
             setHaptics = vm::setHaptics,
+            mouseMove = vm::mouseMove,
+            mouseClick = vm::mouseClick,
             reconnect = { vm.reconnect() },
             togglePin = vm::togglePin,
             setTheme = vm::setTheme,
