@@ -266,13 +266,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         // Persist the discovered MAC even when the selected TV keeps the same IP.
         store.selectedTv = enrichedTv
         selectedTv.value = enrichedTv
-        // On another Wi-Fi the TV can't be reached: say so instead of failing.
-        wifiCheck(enrichedTv)?.let { mismatch ->
-            wifiMismatch.value = mismatch
-            connecting.value = false
-            activity.value = null
-            return
-        }
+        // SSID is only informational: repeaters/mesh nodes can use a different
+        // SSID while still routing to the TV. Always try the saved IP first.
         wifiMismatch.value = null
         connecting.value = true
         activity.value = "Conectando a ${enrichedTv.displayName}…"
