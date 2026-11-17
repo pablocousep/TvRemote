@@ -850,21 +850,37 @@ private fun TouchPage(actions: RemoteActions) {
         // Do not translate drags into D-pad key presses.
         Box(
             Modifier.at(d, 46, 146, 600, 600).glass(RoundedCornerShape(d.dp(44)))
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
+                .pointerInput(actions) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var moved = false
+                        var totalX = 0f
+                        var totalY = 0f
+                        do {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val delta = change.positionChange()
+                            totalX += delta.x
+                            totalY += delta.y
+                            if (!moved && (totalX * totalX + totalY * totalY) > viewConfiguration.touchSlop * viewConfiguration.touchSlop) {
+                                moved = true
+                                view.tick(haptics)
+                            }
+                            if (moved && (delta.x != 0f || delta.y != 0f)) {
+                                // Convert finger pixels to TV pointer movement. A little
+                                // acceleration makes the full screen reachable without
+                                // sacrificing precision on short movements.
+                                val sensitivity = 2.2f
+                                val dx = (delta.x * sensitivity).toInt()
+                                val dy = (delta.y * sensitivity).toInt()
+                                if (dx != 0 || dy != 0) actions.mouseMove(dx, dy)
+                                change.consume()
+                            }
+                        } while (event.changes.any { it.id == down.id && it.pressed })
+                        if (!moved) {
                             view.tick(haptics)
                             actions.mouseClick()
                         }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures { change, drag ->
-                        change.consume()
-                        val sensitivity = 1.6f
-                        val dx = (drag.x * sensitivity).toInt()
-                        val dy = (drag.y * sensitivity).toInt()
-                        if (dx != 0 || dy != 0) actions.mouseMove(dx, dy)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -1426,6 +1442,54 @@ private fun TvList(
                 trailingIcon = "close", trailingDescription = "Cerrar resultados",
                 onTrailing = { adding = false }
             ) { naming = tv to true }
+        }
+
+        // Manual IP entry also works when SSDP/broadcast discovery is blocked
+        // between the main router and a Wi-Fi repeater.
+        var manualIp by rememberSaveable { mutableStateOf("") }
+        Spacer(Modifier.height(d.dp(20)))
+        Label("¿No aparece? Introduce la IP de la TV", 20, InkMuted)
+        Spacer(Modifier.height(d.dp(10)))
+        Row(
+            Modifier.fillMaxWidth().height(d.dp(68))
+                .background(pal.fg.copy(.055f), RoundedCornerShape(d.dp(22)))
+                .border(1.dp, pal.fg.copy(.08f), RoundedCornerShape(d.dp(22)))
+                .padding(horizontal = d.dp(18)),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicTextField(
+                value = manualIp,
+                onValueChange = { value -> manualIp = value.filter { it.isDigit() || it == '.' }.take(15) },
+                singleLine = true,
+                textStyle = TextStyle(color = Ink, fontSize = d.sp(22)),
+                cursorBrush = SolidColor(Ink),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    Box {
+                        if (manualIp.isEmpty()) Label("Ej. 192.168.1.50", 21, InkMuted)
+                        inner()
+                    }
+                }
+            )
+            Spacer(Modifier.width(d.dp(12)))
+            Text(
+                "Conectar", color = Ink, fontSize = d.sp(20), fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(d.dp(18)))
+                    .background(pal.fg.copy(.12f))
+                    .pressable(description = "Conectar por IP", onClick = {
+                        val parts = manualIp.trim().split(".")
+                        val valid = parts.size == 4 && parts.all { part ->
+                            part.isNotEmpty() && part.toIntOrNull()?.let { it in 0..255 } == true
+                        }
+                        if (valid) {
+                            val ip = parts.joinToString(".") { it.toInt().toString() }
+                            actions.connect(SamsungTv(ip, "Samsung Smart TV", "IP manual"))
+                            adding = false
+                            onChosen()
+                        }
+                    })
+                    .padding(horizontal = d.dp(20), vertical = d.dp(14))
+            )
         }
     }
 }
