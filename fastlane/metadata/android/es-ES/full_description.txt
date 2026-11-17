@@ -1,0 +1,29 @@
+Controla tu Samsung Smart TV desde el móvil con un mando moderno, rápido y sin anuncios.
+
+<b>Todo lo de un mando, y más</b>
+• Cruceta táctil con OK, volumen, canales, atrás e inicio.
+• Retroceso, avance y reproducir/pausa para series y películas.
+• Teclado numérico, teclas de color, fuente, menú, guía e info.
+• Touchpad: desliza para moverte y toca para aceptar.
+• Escribe en la tele desde el teclado del móvil o pega texto copiado.
+• Los botones de volumen del móvil controlan el volumen de la tele.
+
+<b>Enciende la tele desde el móvil</b>
+Con «Encender con móvil» activado en la tele, TvRemote la despierta aunque esté apagada. La app te guía en 3 pasos sencillos.
+
+<b>Tus apps a un toque</b>
+Fija hasta 3 apps en el mando principal y ábrelas al instante. La lista se toma de las apps instaladas en tu tele.
+
+<b>Varios televisores</b>
+Guarda todas tus teles con su propio nombre (Tele salón, Tele dormitorio…). Si una tele está en otra Wi‑Fi, la app te avisa y te deja cambiar de red con un toque.
+
+<b>Y además</b>
+• Tema oscuro, claro o automático.
+• Widget para la pantalla de inicio y botón en Ajustes rápidos.
+• Duplicar la pantalla con Smart View y cambiar de entrada (TV, HDMI).
+• Conexión segura y privada: todo ocurre en tu red local, sin cuentas ni anuncios.
+
+<b>Requisitos</b>
+Samsung Smart TV con Tizen (2016 o posterior) y el móvil en la misma red Wi‑Fi.
+
+TvRemote es una app independiente y no está afiliada a Samsung. Samsung y Smart TV son marcas de Samsung Electronics.

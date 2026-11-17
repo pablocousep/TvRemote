@@ -16,6 +16,11 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - Al ser pública, cualquiera podría firmar un APK con esa clave. La app solo descarga de los releases de este repositorio, así que no instales APKs de TvRemote de otras fuentes.
 - Si en el futuro se configura una clave privada mediante los secretos `TVREMOTE_KEYSTORE_BASE64`, `TVREMOTE_KEYSTORE_PASSWORD`, `TVREMOTE_KEY_ALIAS` y `TVREMOTE_KEY_PASSWORD`, CI firmará el release con ella. Ese cambio de clave obliga a desinstalar la app una vez.
 
+## Google Play
+- Hay dos variantes: **github** (APK de los releases de GitHub, se actualiza sola) y **play** (bundle `.aab` para Google Play, sin actualizador, sin permiso de instalar apps ni notificaciones, porque Play prohíbe que una app se actualice fuera de la tienda).
+- CI genera el `.aab` firmado con la **clave de subida** si existen los secretos `TVREMOTE_UPLOAD_KEYSTORE_BASE64`, `TVREMOTE_UPLOAD_KEYSTORE_PASSWORD`, `TVREMOTE_UPLOAD_KEY_ALIAS` y `TVREMOTE_UPLOAD_KEY_PASSWORD` (artefacto `TvRemote-play-aab`, también adjunto a cada release).
+- Ficha de la tienda (textos, capturas, gráfico destacado, icono) en `fastlane/metadata/android/es-ES/`; respuestas para los formularios de Play Console en `fastlane/PLAY_CONSOLE.md`; política de privacidad en [`PRIVACY.md`](PRIVACY.md).
+
 ## Funciones
 - Mando con cruceta, OK, volumen, canales, multimedia, atrás e inicio; tres accesos directos configurables (mantén pulsada una app en *Aplicaciones* para fijarla).
 - Páginas deslizables: mando, teclado numérico con teclas de color, y touchpad con envío y pegado de texto.

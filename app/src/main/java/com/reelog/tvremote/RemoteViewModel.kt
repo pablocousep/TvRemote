@@ -128,12 +128,15 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         }
         selectedTv.value?.let { connect(it, auto = true) }
         // Schedule a network-aware check every six hours, including while the app is closed.
-        UpdateCheckWorker.schedule(app)
-        // A release found in the background is shown right away; otherwise check every 6 hours.
-        // Silent: the prompt still appears for a new, not-dismissed release, but there is no
-        // "you're up to date" message when the pending one was just installed.
-        if (store.pendingUpdateTag != null || System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) {
-            checkForUpdates(silent = true)
+        // The Google Play build gets its updates from Play, never from GitHub.
+        if (BuildConfig.SELF_UPDATE) {
+            UpdateCheckWorker.schedule(app)
+            // A release found in the background is shown right away; otherwise check every 6 hours.
+            // Silent: the prompt still appears for a new, not-dismissed release, but there is no
+            // "you're up to date" message when the pending one was just installed.
+            if (store.pendingUpdateTag != null || System.currentTimeMillis() - store.lastUpdateCheck > 6 * 3600_000L) {
+                checkForUpdates(silent = true)
+            }
         }
     }
 
@@ -379,6 +382,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     // --- Updates ------------------------------------------------------------------------------
 
     fun checkForUpdates(silent: Boolean = false) {
+        if (!BuildConfig.SELF_UPDATE) return
         if (updateChecking.value) return
         updateChecking.value = true
         viewModelScope.launch {
@@ -403,6 +407,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startUpdate() {
+        if (!BuildConfig.SELF_UPDATE) return
         val info = update.value ?: return
         val app = getApplication<Application>()
         if (!Updater.canInstall(app)) {

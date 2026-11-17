@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= 33 &&
+        if (BuildConfig.SELF_UPDATE && Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
                 pinnedApps = vm.pinnedApps.toList(),
                 appIcons = vm.appIcons.toMap(),
                 versionName = vm.versionName,
+                selfUpdate = BuildConfig.SELF_UPDATE,
                 update = vm.update.value,
                 updatePrompt = vm.updatePrompt.value,
                 updateChecking = vm.updateChecking.value,

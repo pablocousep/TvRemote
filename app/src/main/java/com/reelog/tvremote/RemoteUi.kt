@@ -230,6 +230,8 @@ data class RemoteUiState(
     val pinnedApps: List<TvApp> = TvApps.take(3),
     val appIcons: Map<String, ImageBitmap> = emptyMap(),
     val versionName: String = "",
+    /** False in the Google Play build, which is updated by Play. */
+    val selfUpdate: Boolean = true,
     val update: UpdateInfo? = null,
     val updatePrompt: Boolean = false,
     val updateChecking: Boolean = false,
@@ -1122,8 +1124,8 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 }
             }
         }
-        // Updates
-        Card {
+        // Updates (GitHub build only; the Play build is updated by Play)
+        if (state.selfUpdate) Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SettingsIcon("download")
                 Spacer(Modifier.width(d.dp(20)))

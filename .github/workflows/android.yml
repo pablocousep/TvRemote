@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_KEYSTORE: ${{ secrets.TVREMOTE_KEYSTORE_BASE64 != '' }}
+      HAS_UPLOAD_KEY: ${{ secrets.TVREMOTE_UPLOAD_KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,17 +42,18 @@ jobs:
       - name: Install Android SDK packages
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
 
+      # Two variants: "github" (APK on GitHub releases, self-updating) and "play" (Google Play bundle).
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleGithubDebug
 
       - name: Screenshot tests
-        run: gradle --no-daemon testDebugUnitTest
+        run: gradle --no-daemon testGithubDebugUnitTest
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,12 +73,32 @@ jobs:
         run: |
           echo "$TVREMOTE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tvremote.jks"
           export TVREMOTE_KEYSTORE="$RUNNER_TEMP/tvremote.jks"
-          gradle --no-daemon assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}.apk"
+          gradle --no-daemon assembleGithubRelease
+          cp app/build/outputs/apk/github/release/app-github-release.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}.apk"
 
       - name: Name debug APK
         if: env.HAS_KEYSTORE != 'true'
-        run: cp app/build/outputs/apk/debug/app-debug.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}-debug.apk"
+        run: cp app/build/outputs/apk/github/debug/app-github-debug.apk "TvRemote-v0.3.${TVREMOTE_BUILD_NUMBER}-debug.apk"
+
+      - name: Build Google Play bundle
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          TVREMOTE_UPLOAD_KEYSTORE_BASE64: ${{ secrets.TVREMOTE_UPLOAD_KEYSTORE_BASE64 }}
+          TVREMOTE_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.TVREMOTE_UPLOAD_KEYSTORE_PASSWORD }}
+          TVREMOTE_UPLOAD_KEY_ALIAS: ${{ secrets.TVREMOTE_UPLOAD_KEY_ALIAS }}
+          TVREMOTE_UPLOAD_KEY_PASSWORD: ${{ secrets.TVREMOTE_UPLOAD_KEY_PASSWORD }}
+        run: |
+          echo "$TVREMOTE_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export TVREMOTE_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          gradle --no-daemon bundlePlayRelease
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab "TvRemote-play-v0.3.${TVREMOTE_BUILD_NUMBER}.aab"
+      - name: Upload Google Play bundle
+        if: env.HAS_UPLOAD_KEY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TvRemote-play-aab
+          path: TvRemote-play-v0.3.*.aab
+          retention-days: 30
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -93,4 +115,6 @@ jobs:
           tag_name: v0.3.${{ env.TVREMOTE_BUILD_NUMBER }}
           name: TvRemote v0.3.${{ env.TVREMOTE_BUILD_NUMBER }}
           generate_release_notes: true
-          files: TvRemote-v0.3.*.apk
+          files: |
+            TvRemote-v0.3.*.apk
+            TvRemote-play-v0.3.*.aab
