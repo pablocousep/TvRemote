@@ -48,7 +48,8 @@ class MainActivity : ComponentActivity() {
             checkForUpdates = { vm.checkForUpdates() },
             startUpdate = vm::startUpdate,
             dismissUpdate = vm::dismissUpdate,
-            forgetSaved = vm::forgetSaved
+            forgetSaved = vm::forgetSaved,
+            renameTv = vm::renameTv
         )
 
         setContent {
@@ -73,7 +74,8 @@ class MainActivity : ComponentActivity() {
                 updateChecking = vm.updateChecking.value,
                 updateProgress = vm.updateProgress.value,
                 savedTvs = vm.savedTvs.toList(),
-                tvAsleep = vm.tvAsleep.value
+                tvAsleep = vm.tvAsleep.value,
+                activity = vm.activity.value
             )
             RemoteScreen(state, actions)
         }
@@ -116,19 +118,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Samsung TVs receive screen mirroring through Smart View (Miracast), not Google Cast, so
+     * Android's generic Cast settings would never find the TV. Open Samsung's Smart View on
+     * Samsung phones, the Miracast screen on phones that still have one, else explain.
+     */
     private fun openCastSettings() {
-        val intents = listOf(
-            Intent(Settings.ACTION_CAST_SETTINGS),
-            Intent("android.settings.WIFI_DISPLAY_SETTINGS"),
-            Intent(Settings.ACTION_WIRELESS_SETTINGS)
-        )
-        for (intent in intents) {
+        val smartView = packageManager.getLaunchIntentForPackage("com.samsung.android.smartmirroring")
+        val miracast = Intent("android.settings.WIFI_DISPLAY_SETTINGS")
+        val candidates = listOfNotNull(smartView, miracast.takeIf { it.resolveActivity(packageManager) != null })
+        for (intent in candidates) {
             try {
                 startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 return
             } catch (_: Exception) {
             }
         }
-        vm.setStatus("Abre Smart View desde el panel rápido del móvil para duplicar la pantalla.")
+        vm.setStatus(
+            if (Build.MANUFACTURER.equals("samsung", ignoreCase = true))
+                "Desliza el panel rápido y toca Smart View para duplicar la pantalla."
+            else "Este móvil no tiene Miracast. La TV Samsung no admite Google Cast para duplicar la pantalla."
+        )
     }
 }

@@ -218,12 +218,17 @@ class SamsungRemote(
         if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
     }
 
+    /**
+     * Types [value] into the TV's focused text field. Samsung expects the text itself
+     * base64-encoded in "Cmd", with "DataOfCmd" set to "base64".
+     */
     fun sendText(value: String) {
+        val encoded = Base64.encodeToString(value.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
         val payload = JSONObject().apply {
             put("method", "ms.remote.control")
             put("params", JSONObject().apply {
-                put("Cmd", "Text")
-                put("DataOfCmd", value)
+                put("Cmd", encoded)
+                put("DataOfCmd", "base64")
                 put("Option", "false")
                 put("TypeOfRemote", "SendInputString")
             })

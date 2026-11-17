@@ -44,18 +44,29 @@ class ScreenshotTest {
         shot("02-numbers")
     }
 
-    @Test fun apps() { show(); rule.onNodeWithContentDescription("Aplicaciones").performClick(); shot("03-apps") }
+    @Test fun apps() {
+        show(RemoteUiState(connected = true, selectedTv = tv, pinnedApps = TvApps.take(2)))
+        rule.onNodeWithContentDescription("Aplicaciones").performClick(); shot("03-apps")
+    }
 
     @Test fun cast() { show(); rule.onNodeWithContentDescription("Transmitir").performClick(); shot("04-cast") }
 
     @Test fun settings() {
         show(RemoteUiState(
             connected = true, selectedTv = tv,
-            savedTvs = listOf(SavedTv(tv, System.currentTimeMillis() - 3_600_000)),
+            savedTvs = listOf(
+                SavedTv(tv.copy(label = "Tele salón"), System.currentTimeMillis() - 3_600_000),
+                SavedTv(SamsungTv("192.168.1.40", "Samsung Q60", "QE43Q60", label = "Tele dormitorio"), System.currentTimeMillis() - 90_000_000)
+            ),
             tvs = listOf(SamsungTv("192.168.1.31", "Samsung The Frame", "QE55LS03BAUXXC"))
         ))
         rule.onNodeWithContentDescription("Ajustes").performClick()
         shot("05-settings")
+    }
+
+    @Test fun nameDialogAndActivity() {
+        show(RemoteUiState(selectedTv = tv.copy(label = "Tele salón"), connecting = true, activity = "Conectando a Tele salón…"))
+        shot("08-connecting")
     }
 
     @Test fun lightTheme() {

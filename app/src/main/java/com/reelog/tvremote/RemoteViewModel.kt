@@ -22,6 +22,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val connected = mutableStateOf(false)
     val connecting = mutableStateOf(false)
     val connectionLost = mutableStateOf(false)
+    /** Short "what's happening" line under the TV name (connecting, waking…), instead of toasts. */
+    val activity = mutableStateOf<String?>(null)
     /** The TV is off/asleep but can be woken with Wake-on-LAN (its MAC is known). */
     val tvAsleep = mutableStateOf(false)
     val savedTvs = mutableStateListOf<SavedTv>().apply { addAll(store.savedTvs) }
@@ -58,7 +60,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private val session = TvSession(
         app, store, remote,
         log = { line -> viewModelScope.launch { log(line) } },
-        status = { msg -> viewModelScope.launch { setStatus(msg) } },
+        status = { msg -> viewModelScope.launch { onSessionStatus(msg) } },
         onTvChanged = { tv -> viewModelScope.launch { selectedTv.value = tv } }
     )
 
@@ -86,9 +88,20 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Connection errors are expected while the TV sleeps; keep them in the log instead. */
     private fun onRemoteStatus(msg: String) {
-        val connectionNoise = msg.startsWith("No se pudo conectar") || msg == "Conexión cerrada" ||
-            msg.startsWith("Conexión TLS verificada")
-        if (connectionNoise && canWake()) log(msg) else setStatus(msg)
+        // Routine connection progress is shown by the line under the TV name, not as toasts.
+        val progress = msg.startsWith("Conectando") || msg.startsWith("Conexión TLS verificada") ||
+            msg == "Conectado al Samsung TV"
+        val connectionNoise = msg.startsWith("No se pudo conectar") || msg == "Conexión cerrada"
+        when {
+            progress -> log(msg)
+            connectionNoise && canWake() -> log(msg)
+            else -> setStatus(msg)
+        }
+    }
+
+    /** Power/connect steps ending in "…" are progress (shown under the TV name); the rest are results. */
+    private fun onSessionStatus(msg: String) {
+        if (msg.endsWith("…")) activity.value = msg else setStatus(msg)
     }
 
     private fun onConnection(up: Boolean) {
@@ -181,10 +194,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         store.selectedTv = enrichedTv
         selectedTv.value = enrichedTv
         connecting.value = true
+        activity.value = "Conectando a ${enrichedTv.displayName}…"
         viewModelScope.launch {
             // On launch the TV is often just asleep: don't scan the network for a new IP then.
             val ok = session.connect(enrichedTv, relocate = !auto)
             connecting.value = false
+            if (!powerBusy.value) activity.value = null
             if (ok) {
                 // Some Samsung models expose their MAC only through the REST device endpoint.
                 val mac = enrichedTv.macAddress ?: WakeOnLan.probe(enrichedTv.ip, 1200).mac
@@ -199,9 +214,9 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             if (!ok) {
                 if (canWake()) {
                     tvAsleep.value = true
-                    if (!auto) setStatus("${tv.name} está apagada. Pulsa encender para despertarla.")
+                    if (!auto) setStatus("${enrichedTv.displayName} está apagada. Pulsa encender para despertarla.")
                 } else {
-                    setStatus("No se pudo conectar con ${tv.name}")
+                    setStatus("No se pudo conectar con ${enrichedTv.displayName}")
                 }
             }
         }
@@ -229,7 +244,6 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     fun discover() {
         if (scanning.value) return
         scanning.value = true
-        setStatus("Buscando televisores en tu red local…")
         viewModelScope.launch {
             try {
                 val result = discovery.discover()
@@ -253,7 +267,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         if (powerJob?.isActive == true) return
         powerBusy.value = true
         powerJob = viewModelScope.launch {
-            try { block() } finally { powerBusy.value = false }
+            try { block() } finally { powerBusy.value = false; activity.value = null }
         }
     }
 
@@ -268,20 +282,25 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     fun setHaptics(on: Boolean) { haptics.value = on; store.haptics = on }
     fun setTheme(value: String) { theme.value = value; store.theme = value }
 
+    /** Adds or removes an app from the main remote's shortcut row (up to 3). */
     fun togglePin(app: TvApp) {
         val current = pinnedApps.toMutableList()
         val index = current.indexOfFirst { it.id == app.id }
         if (index >= 0) {
-            if (current.size == 1) return setStatus("Deja al menos un acceso directo")
             current.removeAt(index)
-            setStatus("${app.name} quitado del mando")
         } else {
-            if (current.size >= 3) current.removeAt(current.lastIndex)
+            if (current.size >= 3) return setStatus("El mando ya tiene 3 apps. Quita una para añadir ${app.name}.")
             current.add(app)
-            setStatus("${app.name} añadido al mando")
         }
         pinnedApps.clear(); pinnedApps.addAll(current)
         store.pinnedApps = current
+    }
+
+    /** Sets or clears the user's note for a TV ("Tele salón"). */
+    fun renameTv(tv: SamsungTv, label: String?) {
+        store.renameTv(tv, label)
+        savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+        store.selectedTv?.let { selectedTv.value = it }
     }
 
     // --- Updates ------------------------------------------------------------------------------

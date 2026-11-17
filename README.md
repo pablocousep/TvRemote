@@ -19,12 +19,12 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 ## Funciones
 - Mando con cruceta, OK, volumen, canales, multimedia, atrás e inicio; tres accesos directos configurables (mantén pulsada una app en *Aplicaciones* para fijarla).
 - Páginas deslizables: mando, teclado numérico con teclas de color, y touchpad con envío y pegado de texto.
-- *Aplicaciones*: lista de apps instaladas que comparte la TV (según modelo) o las más comunes.
-- *Transmitir*: duplicar pantalla del móvil y cambio de entrada (TV, HDMI 1–4).
+- *Aplicaciones*: sección *En el mando* (hasta 3 accesos directos, con − para quitar) y lista de apps con + para añadirlas.
+- *Transmitir*: duplicar pantalla con Smart View (móviles Samsung) o Miracast, y cambio de entrada (TV, HDMI 1–4). Las TVs Samsung no admiten Google Cast para duplicar.
 - *Ajustes*: televisores guardados (con botón para añadir uno nuevo) y tema oscuro/claro/sistema.
 - Botones de volumen del móvil controlan la TV con la app abierta.
 - Widget de pantalla de inicio (encender, volumen, silencio) y botón en Ajustes rápidos para encender o apagar.
-- Guarda los televisores a los que te has conectado (*Mis televisores*, con la fecha de último uso).
+- Guarda los televisores a los que te has conectado, con un nombre propio (*Tele salón*…) y la fecha de último uso.
 - Si la TV cambia de IP, la app la vuelve a encontrar por su MAC.
 - Con Wake-on-LAN configurado (la app aprende la MAC al conectar), una TV apagada se muestra "en reposo" en lugar de dar error de conexión.
 - Se actualiza sola desde los releases de GitHub.

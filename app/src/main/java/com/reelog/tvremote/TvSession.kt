@@ -19,13 +19,15 @@ class TvStore(context: Context) {
                 ip,
                 tvPrefs.getString("name", "Samsung Smart TV") ?: "Samsung Smart TV",
                 tvPrefs.getString("model", "") ?: "",
-                tvPrefs.getString("mac", null)
+                tvPrefs.getString("mac", null),
+                tvPrefs.getString("label", null)
             )
         }
         set(tv) {
             if (tv == null) tvPrefs.edit().clear().apply()
             else tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
-                .putString("model", tv.model).putString("mac", tv.macAddress).apply()
+                .putString("model", tv.model).putString("mac", tv.macAddress)
+                .putString("label", tv.label).apply()
         }
 
     var haptics: Boolean
@@ -65,7 +67,8 @@ class TvStore(context: Context) {
                     SavedTv(
                         SamsungTv(
                             o.getString("ip"), o.optString("name", "Samsung Smart TV"), o.optString("model", ""),
-                            o.optString("mac").takeIf { it.isNotBlank() }
+                            o.optString("mac").takeIf { it.isNotBlank() },
+                            o.optString("label").takeIf { it.isNotBlank() }
                         ),
                         o.optLong("last")
                     )
@@ -75,8 +78,18 @@ class TvStore(context: Context) {
 
     /** Adds or refreshes [tv] in the saved list. The same TV is matched by MAC, else by IP. */
     fun rememberTv(tv: SamsungTv, connectedAt: Long = System.currentTimeMillis()) {
+        val existing = savedTvs.firstOrNull { sameTv(it.tv, tv) }
+        // Keep the user's note when the TV comes back from discovery without one.
+        val merged = if (tv.label == null) tv.copy(label = existing?.tv?.label) else tv
         val others = savedTvs.filterNot { sameTv(it.tv, tv) }
-        writeSaved(listOf(SavedTv(tv, connectedAt)) + others)
+        writeSaved(listOf(SavedTv(merged, connectedAt)) + others)
+    }
+
+    /** Changes the user's note of a saved TV without touching when it was last used. */
+    fun renameTv(tv: SamsungTv, label: String?) {
+        val clean = label?.trim()?.takeIf { it.isNotEmpty() }
+        writeSaved(savedTvs.map { if (sameTv(it.tv, tv)) it.copy(tv = it.tv.copy(label = clean)) else it })
+        selectedTv?.takeIf { sameTv(it, tv) }?.let { selectedTv = it.copy(label = clean) }
     }
 
     fun forgetSavedTv(tv: SamsungTv) = writeSaved(savedTvs.filterNot { sameTv(it.tv, tv) })
@@ -87,7 +100,8 @@ class TvStore(context: Context) {
     private fun writeSaved(list: List<SavedTv>) {
         val arr = JSONArray(list.sortedByDescending { it.lastConnected }.take(20).map {
             JSONObject().put("ip", it.tv.ip).put("name", it.tv.name).put("model", it.tv.model)
-                .put("mac", it.tv.macAddress ?: "").put("last", it.lastConnected)
+                .put("mac", it.tv.macAddress ?: "").put("label", it.tv.label ?: "")
+                .put("last", it.lastConnected)
         })
         prefs.edit().putString("saved_tvs", arr.toString()).apply()
     }
@@ -170,7 +184,7 @@ class TvSession(
         }
         // Only carry the token and certificate pin over when the MAC proves it is the same TV.
         if (byMac != null) remote.migratePairing(tv.ip, match.ip)
-        val updated = match.copy(macAddress = match.macAddress ?: tv.macAddress)
+        val updated = match.copy(macAddress = match.macAddress ?: tv.macAddress, label = tv.label)
         store.selectedTv = updated
         onTvChanged(updated)
         log("TV encontrada en su nueva IP ${match.ip}")
@@ -239,7 +253,7 @@ class TvSession(
             return
         }
         val tv = store.selectedTv ?: return status("Elige primero un televisor")
-        status("Comprobando el televisor…")
+        status("Comprobando ${tv.displayName}…")
         val probe = WakeOnLan.probe(tv.ip)
         if (probe.reachable) {
             log("La TV responde (estado: ${probe.powerState ?: "no informado"}, red: ${probe.networkType ?: "?"})")
@@ -260,7 +274,7 @@ class TvSession(
             status("Conecta la TV encendida una vez para que la app aprenda a encenderla.")
             return
         }
-        status("Encendiendo el televisor…")
+        status("Encendiendo ${tv.displayName}…")
         var current = store.selectedTv ?: tv
         log("Wake-on-LAN a $mac")
         var woke = WakeOnLan.wakeAndWait(context, mac, current.ip, log = log)

@@ -3,6 +3,10 @@ package com.reelog.tvremote
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.RepeatMode
@@ -202,7 +206,8 @@ class RemoteActions(
     val checkForUpdates: () -> Unit = {},
     val startUpdate: () -> Unit = {},
     val dismissUpdate: () -> Unit = {},
-    val forgetSaved: (SamsungTv) -> Unit = {}
+    val forgetSaved: (SamsungTv) -> Unit = {},
+    val renameTv: (SamsungTv, String?) -> Unit = { _, _ -> }
 )
 
 /** Snapshot of everything the screen shows. */
@@ -227,7 +232,8 @@ data class RemoteUiState(
     val updateChecking: Boolean = false,
     val updateProgress: Float? = null,
     val savedTvs: List<SavedTv> = emptyList(),
-    val tvAsleep: Boolean = false
+    val tvAsleep: Boolean = false,
+    val activity: String? = null
 )
 
 // ---------------------------------------------------------------------------
@@ -258,6 +264,7 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
         CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
             Box(Modifier.align(Alignment.Center).size(d.dp(DESIGN_W), d.dp(DESIGN_H))) {
                 Header(state, actions, onPickTv = { showPicker = true })
+                ActivityLine(state.activity)
 
                 AnimatedContent(
                     targetState = tab,
@@ -276,7 +283,7 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
                             0 -> {
                                 HorizontalPager(pager, Modifier.fillMaxWidth().height(d.dp(1015))) { page ->
                                     when (page) {
-                                        0 -> MainPage(state.pinnedApps, actions)
+                                        0 -> MainPage(state.pinnedApps, actions, onEditApps = { tab = 1 })
                                         1 -> NumbersPage(actions)
                                         else -> TouchPage(actions)
                                     }
@@ -400,7 +407,8 @@ private fun Header(state: RemoteUiState, actions: RemoteActions, onPickTv: () ->
             }
             Spacer(Modifier.width(d.dp(14)))
             Text(
-                tv?.model?.takeIf { it.isNotBlank() && !it.startsWith("Modelo") } ?: tv?.name ?: "Seleccionar TV",
+                tv?.label?.takeIf { it.isNotBlank() }
+                    ?: tv?.model?.takeIf { it.isNotBlank() && !it.startsWith("Modelo") } ?: tv?.name ?: "Seleccionar TV",
                 color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold,
                 letterSpacing = d.sp(0.3), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = d.dp(420))
@@ -411,23 +419,47 @@ private fun Header(state: RemoteUiState, actions: RemoteActions, onPickTv: () ->
     }
 }
 
+@Composable
+private fun ActivityLine(text: String?) {
+    val d = LocalDs.current
+    // Remember the last text so it can fade out with its content.
+    var shown by remember { mutableStateOf(text ?: "") }
+    if (text != null) shown = text
+    Box(Modifier.at(d, 0, 182, DESIGN_W, 36), contentAlignment = Alignment.Center) {
+        AnimatedVisibility(text != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spinner(Modifier.size(d.dp(18)))
+                Spacer(Modifier.width(d.dp(10)))
+                Text(shown, color = InkMuted, fontSize = d.sp(19), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Page 1 — the main remote from the mock-up
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MainPage(pinned: List<TvApp>, actions: RemoteActions) {
+private fun MainPage(pinned: List<TvApp>, actions: RemoteActions, onEditApps: () -> Unit) {
     val d = LocalDs.current
     var playing by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
-        // Up to three shortcuts, spread over the same 600 px row as the mock-up.
-        val n = pinned.size.coerceIn(1, 3)
-        val w = (600f - 24f * (n - 1)) / n
-        pinned.take(3).forEachIndexed { i, app ->
+        // Up to three shortcuts over the mock-up's 600 px row; a free slot invites adding more.
+        val apps = pinned.take(3)
+        val slots = if (apps.size < 3) apps.size + 1 else 3
+        val w = (600f - 24f * (slots - 1)) / slots
+        apps.forEachIndexed { i, app ->
             GlassButton(
                 Modifier.at(d, 46 + i * (w + 24f), 16, w, 100), RoundedCornerShape(d.dp(24)),
-                description = "Abrir ${app.name}", onClick = { actions.launchApp(app) }
-            ) { AppLogo(app, if (n == 3) 1f else 1.15f) }
+                description = "Abrir ${app.name}", onLongClick = onEditApps, onClick = { actions.launchApp(app) }
+            ) { AppLogo(app, if (slots == 3) 1f else 1.15f) }
+        }
+        if (apps.size < 3) {
+            AddSlot(
+                Modifier.at(d, 46 + apps.size * (w + 24f), 16, w, 100),
+                if (apps.isEmpty()) "Añadir apps al mando" else null, onEditApps
+            )
         }
 
         DPad(Modifier.at(d, 86, 161, 520, 520), actions.key)
@@ -810,29 +842,139 @@ private fun SectionTitle(title: String, subtitle: String? = null) {
     }
 }
 
+/** Dashed "free slot" tile that leads to the Apps tab. */
+@Composable
+private fun AddSlot(modifier: Modifier, label: String?, onClick: () -> Unit) {
+    val d = LocalDs.current
+    val line = pal.fg.copy(.22f)
+    var pressed by remember { mutableStateOf(false) }
+    Box(
+        modifier.clip(RoundedCornerShape(d.dp(24)))
+            .background(if (pressed) pal.fg.copy(.06f) else Color.Transparent)
+            .drawBehind {
+                val sw = 1.4.dp.toPx()
+                drawRoundRect(
+                    line, topLeft = Offset(sw / 2, sw / 2), size = Size(size.width - sw, size.height - sw),
+                    cornerRadius = CornerRadius(24 * d.s * density),
+                    style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())))
+                )
+            }
+            .pressable(description = "Añadir apps al mando", onPressedChange = { pressed = it }, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon("plus", Modifier.size(d.dp(26)), InkMuted)
+            if (label != null) {
+                Spacer(Modifier.width(d.dp(14)))
+                Label(label, 22, InkMuted)
+            }
+        }
+    }
+}
+
+/** Round badge in a tile corner: "+" adds the app to the remote, a tick means it is there. */
+@Composable
+private fun PinBadge(pinned: Boolean, enabled: Boolean, modifier: Modifier, description: String, onClick: () -> Unit) {
+    val d = LocalDs.current
+    val bg by animateColorAsState(if (pinned) OnlineGreen else pal.surfaceTop, label = "pinBg")
+    val k by animateFloatAsState(if (pinned) 1f else .92f, spring(dampingRatio = .45f, stiffness = 500f), label = "pinK")
+    Box(
+        modifier.size(d.dp(56)).scale(k).clip(CircleShape).background(bg)
+            .border(1.dp, if (pinned) Color.Transparent else pal.fg.copy(.18f), CircleShape)
+            .pressable(description = description, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            if (pinned) "check" else "plus", Modifier.size(d.dp(24)),
+            when { pinned -> Color(0xFF0B2414); enabled -> Ink; else -> InkMuted.copy(.5f) }
+        )
+    }
+}
+
 @Composable
 private fun AppsTab(state: RemoteUiState, actions: RemoteActions) {
     val d = LocalDs.current
     val fromTv = state.installedApps.isNotEmpty()
     // Apps reported by the TV first; otherwise the common ones.
     val apps = if (fromTv) state.installedApps else TvApps
+    val pinned = state.pinnedApps.take(3)
+    val full = pinned.size >= 3
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionTitle(
-            "Aplicaciones",
-            if (fromTv) "${apps.size} instaladas en tu TV · mantén pulsada para fijarla en el mando"
-            else "Mantén pulsada una app para fijarla en el mando"
-        )
+        SectionTitle("Aplicaciones", "Toca una app para abrirla en la TV")
+
+        // Shortcuts shown on the main remote.
+        Column(Modifier.padding(horizontal = d.dp(46))) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("En el mando", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Label("${pinned.size} de 3", 21, InkMuted)
+            }
+            Label("Accesos directos de la pantalla principal", 20, InkMuted)
+            Spacer(Modifier.height(d.dp(18)))
+            Row(horizontalArrangement = Arrangement.spacedBy(d.dp(18))) {
+                for (i in 0 until 3) {
+                    val app = pinned.getOrNull(i)
+                    if (app == null) {
+                        Box(
+                            Modifier.weight(1f).height(d.dp(104)).clip(RoundedCornerShape(d.dp(24)))
+                                .drawBehind {
+                                    val sw = 1.4.dp.toPx()
+                                    drawRoundRect(
+                                        Color.Gray.copy(.5f), topLeft = Offset(sw / 2, sw / 2),
+                                        size = Size(size.width - sw, size.height - sw),
+                                        cornerRadius = CornerRadius(24 * d.s * density),
+                                        style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())))
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) { Label("Libre", 21, InkMuted) }
+                    } else {
+                        Box(Modifier.weight(1f).height(d.dp(104))) {
+                            GlassButton(
+                                Modifier.fillMaxSize(), RoundedCornerShape(d.dp(24)),
+                                description = "Abrir ${app.name}", onClick = { actions.launchApp(app) }
+                            ) { AppLogo(app, .8f) }
+                            Box(
+                                Modifier.align(Alignment.TopEnd).offset(d.dp(10), d.dp(-10)).size(d.dp(44))
+                                    .clip(CircleShape).background(pal.surfaceTop)
+                                    .border(1.dp, pal.fg.copy(.2f), CircleShape)
+                                    .pressable(description = "Quitar ${app.name} del mando") { actions.togglePin(app) },
+                                contentAlignment = Alignment.Center
+                            ) { Icon("minus", Modifier.size(d.dp(18)), Ink) }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(d.dp(36)))
+        Column(Modifier.padding(horizontal = d.dp(46))) {
+            Text(
+                if (fromTv) "Instaladas en tu TV" else "Apps", color = Ink, fontSize = d.sp(28),
+                fontWeight = FontWeight.SemiBold
+            )
+            Label(
+                if (full) "El mando está completo: quita una app para añadir otra" else "Pulsa + para añadirla al mando",
+                20, InkMuted
+            )
+        }
+        Spacer(Modifier.height(d.dp(18)))
         apps.chunked(2).forEach { pair ->
             Row(Modifier.padding(horizontal = d.dp(46)).padding(bottom = d.dp(24)),
                 horizontalArrangement = Arrangement.spacedBy(d.dp(24))) {
                 pair.forEach { app ->
-                    GlassButton(
-                        Modifier.weight(1f).height(d.dp(150)), RoundedCornerShape(d.dp(28)),
-                        description = "Abrir ${app.name}",
-                        onLongClick = { actions.togglePin(app) },
-                        onClick = { actions.launchApp(app) }
-                    ) {
-                        AppLogo(app, 1.15f)
+                    val isPinned = pinned.any { it.id == app.id }
+                    Box(Modifier.weight(1f).height(d.dp(150))) {
+                        GlassButton(
+                            Modifier.fillMaxSize(), RoundedCornerShape(d.dp(28)),
+                            description = "Abrir ${app.name}",
+                            onLongClick = { actions.togglePin(app) },
+                            onClick = { actions.launchApp(app) }
+                        ) { AppLogo(app, .95f) }
+                        PinBadge(
+                            isPinned, enabled = isPinned || !full,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(d.dp(12)),
+                            description = if (isPinned) "Quitar ${app.name} del mando" else "Añadir ${app.name} al mando"
+                        ) { actions.togglePin(app) }
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -860,7 +1002,7 @@ private fun CastTab(actions: RemoteActions) {
                 Column {
                     Text("Duplicar pantalla", color = Ink, fontSize = d.sp(30), fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(d.dp(6)))
-                    Label("Abre Smart View / Enviar pantalla del móvil", 22, InkMuted)
+                    Label("Con Smart View (móviles Samsung) o Miracast", 22, InkMuted)
                 }
             }
         }
@@ -1067,6 +1209,24 @@ private fun TvList(
         (a.macAddress != null && a.macAddress.equals(b.macAddress, true)) || a.ip == b.ip
     // Searching is only shown after the user asks to add a TV.
     var adding by rememberSaveable { mutableStateOf(false) }
+    // TV being named: a new one (connect after naming) or a saved one (rename only).
+    var naming by remember { mutableStateOf<Pair<SamsungTv, Boolean>?>(null) }
+    naming?.let { (tv, isNew) ->
+        NameTvDialog(
+            tv, isNew,
+            onDismiss = { naming = null },
+            onConfirm = { label ->
+                naming = null
+                if (isNew) {
+                    actions.connect(tv.copy(label = label))
+                    adding = false
+                    onChosen()
+                } else {
+                    actions.renameTv(tv, label)
+                }
+            }
+        )
+    }
 
     if (saved.isEmpty()) {
         Label("Aún no hay televisores guardados. Añade uno para empezar.", 20, InkMuted)
@@ -1081,12 +1241,13 @@ private fun TvList(
             asleep -> TvRowState.Asleep
             else -> TvRowState.Idle
         }
+        val what = if (entry.tv.label != null) entry.tv.name else entry.tv.model.ifBlank { entry.tv.ip }
         TvRow(
             entry.tv, state,
-            if (current && state != TvRowState.Idle) entry.tv.model.ifBlank { entry.tv.ip }
-            else "${entry.tv.model.ifBlank { entry.tv.ip }} · ${lastUsed(entry.lastConnected)}",
-            trailingIcon = "trash", trailingDescription = "Quitar ${entry.tv.name}",
-            onTrailing = { actions.forgetSaved(entry.tv) }
+            if (current && state != TvRowState.Idle) what else "$what · ${lastUsed(entry.lastConnected)}",
+            trailingIcon = "trash", trailingDescription = "Quitar ${entry.tv.displayName}",
+            onTrailing = { actions.forgetSaved(entry.tv) },
+            onEdit = { naming = entry.tv to false }
         ) { actions.connect(entry.tv); onChosen() }
     }
     Spacer(Modifier.height(d.dp(if (saved.isEmpty()) 16 else 20)))
@@ -1116,7 +1277,7 @@ private fun TvList(
                 tv, TvRowState.New, "${tv.model} · ${tv.ip}",
                 trailingIcon = "close", trailingDescription = "Cerrar resultados",
                 onTrailing = { adding = false }
-            ) { actions.connect(tv); adding = false; onChosen() }
+            ) { naming = tv to true }
         }
     }
 }
@@ -1139,7 +1300,8 @@ private enum class TvRowState { Idle, Connected, Connecting, Asleep, New }
 @Composable
 private fun TvRow(
     tv: SamsungTv, state: TvRowState, subtitle: String,
-    trailingIcon: String, trailingDescription: String, onTrailing: () -> Unit, onConnect: () -> Unit
+    trailingIcon: String, trailingDescription: String, onTrailing: () -> Unit,
+    onEdit: (() -> Unit)? = null, onConnect: () -> Unit
 ) {
     val d = LocalDs.current
     val active = state == TvRowState.Connected || state == TvRowState.Connecting || state == TvRowState.Asleep
@@ -1151,7 +1313,7 @@ private fun TvRow(
             .background(pal.fg.copy(if (active) .07f else .035f))
             .background(if (pressed) pal.fg.copy(.05f) else Color.Transparent)
             .border(1.dp, pal.fg.copy(if (active) .13f else .06f), shape)
-            .pressable(description = "Conectar con ${tv.name}", onPressedChange = { pressed = it }, onClick = onConnect)
+            .pressable(description = "Conectar con ${tv.displayName}", onPressedChange = { pressed = it }, onClick = onConnect)
             .padding(start = d.dp(20), end = d.dp(12), top = d.dp(18), bottom = d.dp(18)),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1163,7 +1325,7 @@ private fun TvRow(
         }
         Spacer(Modifier.width(d.dp(20)))
         Column(Modifier.weight(1f)) {
-            Text(tv.name, color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tv.displayName, color = Ink, fontSize = d.sp(25), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(d.dp(4)))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val (dot, label) = when (state) {
@@ -1181,20 +1343,80 @@ private fun TvRow(
                 Text(subtitle, color = InkMuted, fontSize = d.sp(20), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (state == TvRowState.Idle || state == TvRowState.New) {
+        if (state == TvRowState.New) {
             Spacer(Modifier.width(d.dp(10)))
             Text(
-                "Conectar", color = Ink, fontSize = d.sp(21), fontWeight = FontWeight.SemiBold,
+                "Añadir", color = Ink, fontSize = d.sp(21), fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.background(pal.fg.copy(.08f), RoundedCornerShape(d.dp(24)))
                     .padding(horizontal = d.dp(20), vertical = d.dp(12))
             )
         }
         Spacer(Modifier.width(d.dp(6)))
+        if (onEdit != null) Box(
+            Modifier.size(d.dp(58)).clip(CircleShape)
+                .pressable(description = "Cambiar nombre de ${tv.displayName}", onClick = onEdit),
+            contentAlignment = Alignment.Center
+        ) { Icon("edit", Modifier.size(d.dp(24)), InkMuted) }
         Box(
             Modifier.size(d.dp(58)).clip(CircleShape)
                 .pressable(description = trailingDescription, onClick = onTrailing),
             contentAlignment = Alignment.Center
         ) { Icon(trailingIcon, Modifier.size(d.dp(24)), InkMuted) }
+    }
+}
+
+private val RoomSuggestions = listOf("Salón", "Dormitorio", "Habitación", "Cocina", "Despacho", "Comedor")
+
+/** Asks for a note so each TV is easy to recognise ("Tele salón"). */
+@Composable
+private fun NameTvDialog(tv: SamsungTv, isNew: Boolean, onDismiss: () -> Unit, onConfirm: (String?) -> Unit) {
+    val d = LocalDs.current
+    var text by remember { mutableStateOf(tv.label ?: "") }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().background(pal.dialogBg, RoundedCornerShape(d.dp(40)))
+                .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(40))).padding(d.dp(34))
+        ) {
+            Text(
+                if (isNew) "¿Dónde está esta tele?" else "Nombre de la tele",
+                color = Ink, fontSize = d.sp(34), fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(d.dp(6)))
+            Label("${tv.name} · ${tv.model.ifBlank { tv.ip }}", 21, InkMuted)
+            Spacer(Modifier.height(d.dp(26)))
+            Box(
+                Modifier.fillMaxWidth().height(d.dp(84)).background(pal.fg.copy(.05f), RoundedCornerShape(d.dp(24)))
+                    .border(1.dp, pal.fg.copy(.12f), RoundedCornerShape(d.dp(24))).padding(horizontal = d.dp(26)),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (text.isEmpty()) Label("Ej.: Tele salón", 25, InkMuted)
+                BasicTextField(
+                    text, { text = it.take(30) }, singleLine = true,
+                    textStyle = TextStyle(color = Ink, fontSize = d.sp(26)),
+                    cursorBrush = SolidColor(Ink),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onConfirm(text.trim().ifEmpty { null }) }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(d.dp(18)))
+            // Quick picks: one tap fills a sensible name.
+            RoomSuggestions.chunked(3).forEach { row ->
+                Row(Modifier.padding(bottom = d.dp(12)), horizontalArrangement = Arrangement.spacedBy(d.dp(12))) {
+                    row.forEach { room ->
+                        val value = "Tele ${room.lowercase()}"
+                        Segment(room, text == value, Modifier.weight(1f)) { text = value }
+                    }
+                }
+            }
+            Spacer(Modifier.height(d.dp(18)))
+            Row(horizontalArrangement = Arrangement.spacedBy(d.dp(16))) {
+                PillButton(if (isNew) "Omitir" else "Cancelar", Modifier.weight(1f)) {
+                    if (isNew) onConfirm(null) else onDismiss()
+                }
+                PillButton(if (isNew) "Añadir" else "Guardar", Modifier.weight(1f)) { onConfirm(text.trim().ifEmpty { null }) }
+            }
+        }
     }
 }
 
@@ -1542,6 +1764,11 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .22f), h * (.88f - .22f)), Size(w * .44f, h * .44f), style = stroke)
                 drawCircle(tint, m * .06f, p(.11f, .85f))
             }
+            "edit" -> {
+                poly(.16f to .84f, .20f to .64f, .66f to .18f, .82f to .34f, .36f to .80f, close = true)
+                line(.56f, .28f, .72f, .44f)
+            }
+            "check" -> poly(.16f to .52f, .40f to .76f, .86f to .26f)
             "trash" -> {
                 line(.14f, .24f, .86f, .24f)
                 poly(.38f to .24f, .40f to .10f, .60f to .10f, .62f to .24f)

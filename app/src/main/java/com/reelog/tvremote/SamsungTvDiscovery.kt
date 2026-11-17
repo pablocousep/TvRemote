@@ -27,8 +27,13 @@ data class SamsungTv(
     val ip: String,
     val name: String,
     val model: String,
-    val macAddress: String? = null
-)
+    val macAddress: String? = null,
+    /** User's own note for this TV, e.g. "Tele salón". */
+    val label: String? = null
+) {
+    /** What the app shows: the user's note if there is one, else the TV's name. */
+    val displayName: String get() = label?.takeIf { it.isNotBlank() } ?: name
+}
 
 class SamsungTvDiscovery(private val context: Context) {
     suspend fun discover(): List<SamsungTv> = withContext(Dispatchers.IO) {

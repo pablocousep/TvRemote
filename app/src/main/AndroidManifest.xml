@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Screen mirroring: Samsung Smart View and the Miracast settings screen (Android 11+ visibility). -->
+    <queries>
+        <package android:name="com.samsung.android.smartmirroring"/>
+        <intent>
+            <action android:name="android.settings.WIFI_DISPLAY_SETTINGS"/>
+        </intent>
+    </queries>
     <application
         android:label="TvRemote"
         android:icon="@mipmap/ic_launcher"
