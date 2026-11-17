@@ -240,6 +240,39 @@ class SamsungRemote(
     }
 
     /**
+     * Moves the Samsung TV's virtual mouse pointer by a relative delta.
+     * Unlike KEY_LEFT/RIGHT/UP/DOWN, this uses the TV's mouse input channel.
+     */
+    fun sendMouseMove(dx: Int, dy: Int) {
+        if (dx == 0 && dy == 0) return
+        val payload = JSONObject().apply {
+            put("method", "ms.remote.control")
+            put("params", JSONObject().apply {
+                put("Cmd", "Move")
+                put("Position", JSONObject().apply {
+                    put("x", dx)
+                    put("y", dy)
+                    put("Time", "0")
+                })
+                put("TypeOfRemote", "ProcessMouseDevice")
+            })
+        }.toString()
+        if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
+    }
+
+    /** Sends a real left-click event to the TV's virtual mouse. */
+    fun sendMouseClick() {
+        val payload = JSONObject().apply {
+            put("method", "ms.remote.control")
+            put("params", JSONObject().apply {
+                put("Cmd", "LeftClick")
+                put("TypeOfRemote", "ProcessMouseDevice")
+            })
+        }.toString()
+        if (socket?.send(payload) != true) onStatus("No hay conexión activa con el televisor")
+    }
+
+    /**
      * Types [value] into the TV's focused text field. Samsung expects the text itself
      * base64-encoded in "Cmd", with "DataOfCmd" set to "base64".
      */
