@@ -236,6 +236,13 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun text(value: String) = remote.sendText(value)
+
+    /** Sends relative pointer movement to Samsung TVs that expose mouse support. */
+    fun mouseMove(dx: Int, dy: Int) = remote.sendMouseMove(dx, dy)
+
+    /** Sends a real left mouse click, not the remote's OK key. */
+    fun mouseClick() = remote.sendMouseClick()
+
     fun launchApp(app: TvApp) {
         viewModelScope.launch {
             if (!session.launchApp(app, installedApps.toList(), brandOf(app))) {
