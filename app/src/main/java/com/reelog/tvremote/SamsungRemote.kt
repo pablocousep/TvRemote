@@ -15,6 +15,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 /**
  * Samsung Tizen remote transport.
@@ -36,6 +37,15 @@ class SamsungRemote(
     private val onAppIcon: (iconPath: String, png: ByteArray) -> Unit = { _, _ -> }
 ) {
     private val prefs = context.getSharedPreferences("samsung_tv_pairing", Context.MODE_PRIVATE)
+    // Stable per-install identity: Samsung can distinguish phones and recognize each
+    // one again after an app restart.
+    private val installationId: String = prefs.getString("installation_id", null)
+        ?: UUID.randomUUID().toString().also { id ->
+            check(prefs.edit().putString("installation_id", id).commit()) {
+                "Could not persist TvRemote installation identity"
+            }
+        }
+    private val stableDeviceName = DEVICE_NAME + "-" + installationId.take(6).uppercase()
     @Volatile private var socket: WebSocket? = null
     private var currentHost: String? = null
     private var client: OkHttpClient? = null
@@ -44,7 +54,7 @@ class SamsungRemote(
 
     fun isConnected(): Boolean = connected
 
-    fun connect(ip: String, deviceName: String = DEVICE_NAME) {
+    fun connect(ip: String, deviceName: String = stableDeviceName) {
         close()
         val host = ip.trim()
         if (host.isBlank() || host.any { it.isWhitespace() }) {
@@ -92,23 +102,32 @@ class SamsungRemote(
         socket = okClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (webSocket !== socket) return
-                connected = true
-                onConnectionChanged(true)
-                onStatus("Conexión TLS verificada. Acepta el acceso en la pantalla del televisor si aparece.")
+                // A TLS/WebSocket handshake is not proof that Samsung authorized this client.
+                // Wait for the explicit ms.channel.connect event before enabling controls.
+                onStatus("Canal seguro abierto. Esperando la autorización de Samsung…")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val root = JSONObject(text)
+                    val event = root.optString("event")
                     val data = root.optJSONObject("data")
-                    val receivedToken = data?.optString("token")?.takeIf { it.isNotBlank() && it != "null" }
-                    if (receivedToken != null) {
-                        token = receivedToken
-                        prefs.edit().putString("token_$host", receivedToken).apply()
-                        onStatus("Televisor emparejado y autorizado")
-                    } else if (root.optString("event") == "ms.channel.connect") {
-                        onStatus("Conectado al Samsung TV")
-                    } else if (root.optString("event") == "ed.installedApp.get") {
+                    if (event == "ms.channel.connect") {
+                        val receivedToken = data?.optString("token")
+                            ?.takeIf { it.isNotBlank() && it != "null" }
+                        if (receivedToken != null) {
+                            token = receivedToken
+                            // Save synchronously before reporting success, so reconnects
+                            // always send Samsung's latest authorization token.
+                            if (!prefs.edit().putString("token_$host", receivedToken).commit()) {
+                                onStatus("Conectado, pero no se pudo guardar el token de Samsung")
+                            }
+                        }
+                        connected = true
+                        onConnectionChanged(true)
+                        onStatus(if (receivedToken != null) "Televisor emparejado y autorización guardada"
+                            else "Conectado al Samsung TV")
+                    } else if (event == "ed.installedApp.get") {
                         val list = root.optJSONObject("data")?.optJSONArray("data")
                         if (list != null) {
                             val apps = (0 until list.length()).mapNotNull { i ->
@@ -129,8 +148,10 @@ class SamsungRemote(
                         if (path.isNotEmpty() && b64.isNotEmpty()) {
                             runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()?.let { onAppIcon(path, it) }
                         }
-                    } else if (root.optString("event") == "ms.channel.unauthorized") {
-                        onStatus("El televisor rechazó la autorización. Vuelve a emparejarlo.")
+                    } else if (event == "ms.channel.unauthorized") {
+                        connected = false
+                        onConnectionChanged(false)
+                        onStatus("Samsung ha rechazado este dispositivo. Comprueba el permiso en la TV y vuelve a conectar.")
                     }
                 } catch (_: Exception) {
                     // Ignore non-JSON events.
