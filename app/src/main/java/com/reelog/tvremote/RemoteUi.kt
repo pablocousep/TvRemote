@@ -200,6 +200,8 @@ class RemoteActions(
     val disconnect: () -> Unit,
     val openCastSettings: () -> Unit,
     val setHaptics: (Boolean) -> Unit,
+    val mouseMove: (Int, Int) -> Unit = { _, _ -> },
+    val mouseClick: () -> Unit = {},
     val reconnect: () -> Unit = {},
     val togglePin: (TvApp) -> Unit = {},
     val setTheme: (String) -> Unit = {},
@@ -844,28 +846,25 @@ private fun TouchPage(actions: RemoteActions) {
                 onClick = { if (text.isNotEmpty()) { actions.text(text); text = "" } }) { Label("Enviar", 24) }
         }
 
-        // Touchpad: swipe to move, tap for OK.
+        // Real Samsung pointer: relative mouse movement and a mouse click.
+        // Do not translate drags into D-pad key presses.
         Box(
             Modifier.at(d, 46, 146, 600, 600).glass(RoundedCornerShape(d.dp(44)))
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { view.tick(haptics); key("KEY_ENTER") })
+                    detectTapGestures(
+                        onTap = {
+                            view.tick(haptics)
+                            actions.mouseClick()
+                        }
+                    )
                 }
                 .pointerInput(Unit) {
-                    val step = 46.dp.toPx()
-                    var acc = Offset.Zero
-                    detectDragGestures(onDragStart = { acc = Offset.Zero }) { change, drag ->
+                    detectDragGestures { change, drag ->
                         change.consume()
-                        acc += drag
-                        while (abs(acc.x) > step || abs(acc.y) > step) {
-                            val k = if (abs(acc.x) > abs(acc.y)) {
-                                val dir = if (acc.x > 0) "KEY_RIGHT" else "KEY_LEFT"
-                                acc = acc.copy(x = acc.x - step * kotlin.math.sign(acc.x)); dir
-                            } else {
-                                val dir = if (acc.y > 0) "KEY_DOWN" else "KEY_UP"
-                                acc = acc.copy(y = acc.y - step * kotlin.math.sign(acc.y)); dir
-                            }
-                            view.tick(haptics); key(k)
-                        }
+                        val sensitivity = 1.6f
+                        val dx = (drag.x * sensitivity).toInt()
+                        val dy = (drag.y * sensitivity).toInt()
+                        if (dx != 0 || dy != 0) actions.mouseMove(dx, dy)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -873,7 +872,7 @@ private fun TouchPage(actions: RemoteActions) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon("touch", Modifier.size(d.dp(64)), InkMuted)
                 Spacer(Modifier.height(d.dp(18)))
-                Label("Desliza para moverte · toca para OK", 22, InkMuted)
+                Label("Desliza para mover el puntero · toca para clic", 22, InkMuted)
             }
         }
 
