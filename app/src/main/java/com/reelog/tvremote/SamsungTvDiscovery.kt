@@ -29,7 +29,9 @@ data class SamsungTv(
     val model: String,
     val macAddress: String? = null,
     /** User's own note for this TV, e.g. "Tele salón". */
-    val label: String? = null
+    val label: String? = null,
+    /** Wi-Fi network (SSID) the phone was on the last time it reached this TV. */
+    val ssid: String? = null
 ) {
     /** What the app shows: the user's note if there is one, else the TV's name. */
     val displayName: String get() = label?.takeIf { it.isNotBlank() } ?: name

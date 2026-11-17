@@ -26,6 +26,8 @@ Cada push a `main` o a ramas `claude/**` compila la app en GitHub Actions:
 - Widget de pantalla de inicio (encender, volumen, silencio) y botón en Ajustes rápidos para encender o apagar.
 - Guarda los televisores a los que te has conectado, con un nombre propio (*Tele salón*…) y la fecha de último uso.
 - Si la TV cambia de IP, la app la vuelve a encontrar por su MAC.
+- Recuerda la Wi-Fi de cada TV. Si el móvil está en otra red, avisa y abre el selector de Wi-Fi de Android con un toque (Android no deja a las apps cambiar de red solas); al cambiar, reconecta. Para leer el nombre de la Wi-Fi Android exige el permiso de ubicación.
+- *Ajustes › Encender desde el móvil* explica en 3 pasos cómo activar el encendido por red; si la TV no despierta, la app muestra esos pasos.
 - Con Wake-on-LAN configurado (la app aprende la MAC al conectar), una TV apagada se muestra "en reposo" en lugar de dar error de conexión.
 - Se actualiza sola desde los releases de GitHub.
 

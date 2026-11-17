@@ -207,7 +207,10 @@ class RemoteActions(
     val startUpdate: () -> Unit = {},
     val dismissUpdate: () -> Unit = {},
     val forgetSaved: (SamsungTv) -> Unit = {},
-    val renameTv: (SamsungTv, String?) -> Unit = { _, _ -> }
+    val renameTv: (SamsungTv, String?) -> Unit = { _, _ -> },
+    val openWifiPanel: () -> Unit = {},
+    val dismissWifiMismatch: () -> Unit = {},
+    val showWolGuide: (Boolean) -> Unit = {}
 )
 
 /** Snapshot of everything the screen shows. */
@@ -233,7 +236,9 @@ data class RemoteUiState(
     val updateProgress: Float? = null,
     val savedTvs: List<SavedTv> = emptyList(),
     val tvAsleep: Boolean = false,
-    val activity: String? = null
+    val activity: String? = null,
+    val wifiMismatch: WifiMismatch? = null,
+    val wolGuide: Boolean = false
 )
 
 // ---------------------------------------------------------------------------
@@ -297,9 +302,16 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
                     }
                 }
 
-                ConnectionLostBanner(state.connectionLost, state.connecting, actions.reconnect)
-                if (!state.connectionLost) StatusToast(state.status, state.statusSerial)
+                ConnectionLostBanner(state.connectionLost && state.wifiMismatch == null, state.connecting, actions.reconnect)
+                WifiBanner(state.wifiMismatch, actions)
+                if (!state.connectionLost && state.wifiMismatch == null) StatusToast(state.status, state.statusSerial)
                 BottomNav(tab, settingsBadge = state.update != null) { tab = it }
+            }
+        }
+
+        if (state.wolGuide) {
+            CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
+                WolGuideDialog(state, actions)
             }
         }
 
@@ -312,6 +324,54 @@ private fun RemoteScreenContent(state: RemoteUiState, actions: RemoteActions) {
         if (showPicker) {
             CompositionLocalProvider(LocalDs provides d, LocalHaptics provides state.haptics) {
                 TvPickerDialog(state, actions) { showPicker = false }
+            }
+        }
+    }
+}
+
+/** "This TV is on another Wi-Fi": one tap opens Android's Wi-Fi picker; we reconnect once it changes. */
+@Composable
+private fun WifiBanner(mismatch: WifiMismatch?, actions: RemoteActions) {
+    val d = LocalDs.current
+    var last by remember { mutableStateOf(mismatch) }
+    if (mismatch != null) last = mismatch
+    Box(Modifier.at(d, 30, 1146, 632, 170), contentAlignment = Alignment.BottomCenter) {
+        AnimatedVisibility(
+            mismatch != null,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 }
+        ) {
+            val m = last ?: return@AnimatedVisibility
+            Row(
+                Modifier.fillMaxWidth().background(pal.toastBg, RoundedCornerShape(d.dp(32)))
+                    .border(1.dp, Color(0xFF3E8EF7).copy(.55f), RoundedCornerShape(d.dp(32)))
+                    .padding(start = d.dp(24), end = d.dp(12), top = d.dp(16), bottom = d.dp(16)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon("wifi", Modifier.size(d.dp(34)), Color(0xFF3E8EF7))
+                Spacer(Modifier.width(d.dp(18)))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "${m.tv.displayName} está en «${m.expected}»", color = Ink, fontSize = d.sp(21),
+                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        m.current?.let { "Estás en «$it»" } ?: "No estás conectado a una Wi-Fi",
+                        color = InkMuted, fontSize = d.sp(19), maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.width(d.dp(10)))
+                Text(
+                    "Cambiar Wi-Fi", color = Color.White, fontSize = d.sp(20), fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(d.dp(26))).background(Color(0xFF3E8EF7))
+                        .pressable(description = "Cambiar Wi-Fi", onClick = actions.openWifiPanel)
+                        .padding(horizontal = d.dp(20), vertical = d.dp(14))
+                )
+                Box(
+                    Modifier.size(d.dp(50)).clip(CircleShape)
+                        .pressable(description = "Cerrar aviso", onClick = actions.dismissWifiMismatch),
+                    contentAlignment = Alignment.Center
+                ) { Icon("close", Modifier.size(d.dp(18)), InkMuted) }
             }
         }
     }
@@ -1043,6 +1103,8 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 connected = state.connected, connecting = state.connecting || state.powerBusy, asleep = state.tvAsleep
             )
         }
+        // Turning the TV on from the phone
+        Card { WolCard(state, actions) }
         // Appearance
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1113,6 +1175,90 @@ private fun SettingsTab(state: RemoteUiState, actions: RemoteActions) {
                 "TvRemote ${state.versionName}".trim() + " · Samsung Smart TV (Tizen 2016+)",
                 color = InkMuted.copy(.75f), fontSize = d.sp(19)
             )
+        }
+    }
+}
+
+/** True when the app has what it needs to switch this TV on (its network address). */
+private fun wolReady(tv: SamsungTv?) = tv?.macAddress != null
+
+@Composable
+private fun WolSteps() {
+    val d = LocalDs.current
+    val steps = listOf(
+        "En la tele, abre Ajustes › General › Red › Configuración experta y activa «Encender con móvil». " +
+            "En teles de 2022 o posteriores está en Ajustes › Conexión › Red › Configuración experta.",
+        "Con la tele encendida, conéctate a ella una vez desde la app. Así aprende a despertarla.",
+        "Listo: con la tele apagada, pulsa el botón de encendido de la app y se encenderá. El móvil tiene que estar en la misma Wi-Fi."
+    )
+    steps.forEachIndexed { i, text ->
+        if (i > 0) Spacer(Modifier.height(d.dp(16)))
+        Row {
+            Box(
+                Modifier.size(d.dp(40)).background(pal.fg.copy(.09f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) { Text("${i + 1}", color = Ink, fontSize = d.sp(20), fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.width(d.dp(18)))
+            Text(text, color = Ink.copy(.88f), fontSize = d.sp(21), modifier = Modifier.weight(1f).padding(top = d.dp(6)))
+        }
+    }
+}
+
+@Composable
+private fun WolCard(state: RemoteUiState, actions: RemoteActions) {
+    val d = LocalDs.current
+    val tv = state.selectedTv
+    val ready = wolReady(tv)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        SettingsIcon("power")
+        Spacer(Modifier.width(d.dp(20)))
+        Column(Modifier.weight(1f)) {
+            Text("Encender desde el móvil", color = Ink, fontSize = d.sp(28), fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(d.dp(10)).background(if (ready) OnlineGreen else Color(0xFFF5A623), CircleShape))
+                Spacer(Modifier.width(d.dp(8)))
+                Label(
+                    when {
+                        tv == null -> "Añade una tele para empezar"
+                        ready -> "Listo para encender ${tv.displayName}"
+                        else -> "Falta conectarte una vez con la tele encendida"
+                    }, 21, InkMuted
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(d.dp(22)))
+    PillButton(if (ready) "¿No se enciende? Ver los pasos" else "Cómo activarlo (3 pasos)", Modifier.fillMaxWidth()) {
+        actions.showWolGuide(true)
+    }
+}
+
+@Composable
+private fun WolGuideDialog(state: RemoteUiState, actions: RemoteActions) {
+    val d = LocalDs.current
+    val tv = state.selectedTv
+    Dialog(onDismissRequest = { actions.showWolGuide(false) }) {
+        Column(
+            Modifier.fillMaxWidth().background(pal.dialogBg, RoundedCornerShape(d.dp(40)))
+                .border(1.dp, pal.fg.copy(.10f), RoundedCornerShape(d.dp(40)))
+                .padding(d.dp(34)).verticalScroll(rememberScrollState())
+        ) {
+            Box(
+                Modifier.size(d.dp(84)).background(pal.fg.copy(.08f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) { Icon("power", Modifier.size(d.dp(40)), Ink) }
+            Spacer(Modifier.height(d.dp(22)))
+            Text("Enciende la tele desde el móvil", color = Ink, fontSize = d.sp(32), fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(d.dp(8)))
+            Label(
+                if (wolReady(tv)) "Si ${tv?.displayName ?: "la tele"} no se ha encendido, revisa el paso 1: suele venir desactivado."
+                else "Solo hay que hacerlo una vez:",
+                21, InkMuted
+            )
+            Spacer(Modifier.height(d.dp(26)))
+            WolSteps()
+            Spacer(Modifier.height(d.dp(30)))
+            PillButton("Entendido", Modifier.fillMaxWidth()) { actions.showWolGuide(false) }
         }
     }
 }
@@ -1241,7 +1387,8 @@ private fun TvList(
             asleep -> TvRowState.Asleep
             else -> TvRowState.Idle
         }
-        val what = if (entry.tv.label != null) entry.tv.name else entry.tv.model.ifBlank { entry.tv.ip }
+        val what = (if (entry.tv.label != null) entry.tv.name else entry.tv.model.ifBlank { entry.tv.ip }) +
+            (entry.tv.ssid?.let { " · $it" } ?: "")
         TvRow(
             entry.tv, state,
             if (current && state != TvRowState.Idle) what else "$what · ${lastUsed(entry.lastConnected)}",
@@ -1763,6 +1910,11 @@ private fun Icon(kind: String, modifier: Modifier = Modifier, tint: Color = Ink)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .40f), h * (.88f - .40f)), Size(w * .80f, h * .80f), style = stroke)
                 drawArc(tint, 270f, 90f, false, Offset(w * (.08f - .22f), h * (.88f - .22f)), Size(w * .44f, h * .44f), style = stroke)
                 drawCircle(tint, m * .06f, p(.11f, .85f))
+            }
+            "wifi" -> {
+                drawArc(tint, 225f, 90f, false, p(.04f, .14f), Size(w * .92f, h * .92f), style = stroke)
+                drawArc(tint, 225f, 90f, false, p(.20f, .32f), Size(w * .60f, h * .60f), style = stroke)
+                drawCircle(tint, m * .08f, p(.5f, .80f))
             }
             "edit" -> {
                 poly(.16f to .84f, .20f to .64f, .66f to .18f, .82f to .34f, .36f to .80f, close = true)

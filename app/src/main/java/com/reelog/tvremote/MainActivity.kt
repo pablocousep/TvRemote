@@ -21,6 +21,10 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
+    /** Location is only needed so Android reveals the Wi-Fi name (to remember each TV's network). */
+    private val locationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted -> if (granted.values.any { it }) vm.onLocationGranted() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,7 +41,7 @@ class MainActivity : ComponentActivity() {
             launchApp = vm::launchApp,
             power = vm::power,
             discover = vm::discover,
-            connect = { vm.connect(it) },
+            connect = { tv -> askLocationOnce(); vm.connect(tv) },
             forget = vm::forget,
             disconnect = vm::disconnect,
             openCastSettings = ::openCastSettings,
@@ -49,7 +53,10 @@ class MainActivity : ComponentActivity() {
             startUpdate = vm::startUpdate,
             dismissUpdate = vm::dismissUpdate,
             forgetSaved = vm::forgetSaved,
-            renameTv = vm::renameTv
+            renameTv = vm::renameTv,
+            openWifiPanel = { WifiNetworks.openWifiPanel(this) },
+            dismissWifiMismatch = vm::dismissWifiMismatch,
+            showWolGuide = vm::showWolGuide
         )
 
         setContent {
@@ -75,10 +82,23 @@ class MainActivity : ComponentActivity() {
                 updateProgress = vm.updateProgress.value,
                 savedTvs = vm.savedTvs.toList(),
                 tvAsleep = vm.tvAsleep.value,
-                activity = vm.activity.value
+                activity = vm.activity.value,
+                wifiMismatch = vm.wifiMismatch.value,
+                wolGuide = vm.wolGuide.value
             )
             RemoteScreen(state, actions)
         }
+    }
+
+    /** Asks for location the first time the user connects to a TV, never again after an answer. */
+    private fun askLocationOnce() {
+        if (WifiNetworks.hasLocationPermission(this)) return
+        val prefs = getSharedPreferences("tvremote_settings", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_location", false)) return
+        prefs.edit().putBoolean("asked_location", true).apply()
+        locationPermission.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        )
     }
 
     /** Phone volume keys drive the TV volume while the remote is open and connected. */

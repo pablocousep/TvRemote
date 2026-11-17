@@ -13,6 +13,9 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+/** The TV lives on another Wi-Fi than the one the phone is on (current = null: no Wi-Fi). */
+data class WifiMismatch(val tv: SamsungTv, val expected: String, val current: String?)
+
 /** Holds the remote's state so it survives configuration changes. */
 class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private val store = TvStore(app)
@@ -24,6 +27,9 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     val connectionLost = mutableStateOf(false)
     /** Short "what's happening" line under the TV name (connecting, waking…), instead of toasts. */
     val activity = mutableStateOf<String?>(null)
+    val wifiMismatch = mutableStateOf<WifiMismatch?>(null)
+    /** Shows the "how to turn the TV on from the phone" steps. */
+    val wolGuide = mutableStateOf(false)
     /** The TV is off/asleep but can be woken with Wake-on-LAN (its MAC is known). */
     val tvAsleep = mutableStateOf(false)
     val savedTvs = mutableStateListOf<SavedTv>().apply { addAll(store.savedTvs) }
@@ -64,7 +70,55 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         onTvChanged = { tv -> viewModelScope.launch { selectedTv.value = tv } }
     )
 
+    /** When the phone changes network while the Wi-Fi notice is shown, retry automatically. */
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) = recheckWifi()
+        override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) = recheckWifi()
+    }
+
+    private fun recheckWifi() {
+        viewModelScope.launch {
+            val pending = wifiMismatch.value ?: return@launch
+            kotlinx.coroutines.delay(800) // let Android finish switching
+            val still = wifiCheck(pending.tv)
+            wifiMismatch.value = still
+            if (still == null && wifiMismatch.value == null) connect(pending.tv)
+        }
+    }
+
+    /** Null when the phone is on the TV's Wi-Fi, or when the network name can't be known. */
+    private fun wifiCheck(tv: SamsungTv): WifiMismatch? {
+        val expected = tv.ssid ?: return null
+        return when (val now = WifiNetworks.current(getApplication())) {
+            is PhoneNetwork.Wifi -> if (now.ssid == expected) null else WifiMismatch(tv, expected, now.ssid)
+            PhoneNetwork.NoWifi -> WifiMismatch(tv, expected, null)
+            PhoneNetwork.WifiUnknown -> null
+        }
+    }
+
+    /** Remembers the Wi-Fi the phone is on as this TV's network. */
+    private fun recordWifi() {
+        val tv = selectedTv.value ?: return
+        val now = WifiNetworks.current(getApplication()) as? PhoneNetwork.Wifi ?: return
+        if (tv.ssid == now.ssid) return
+        val updated = tv.copy(ssid = now.ssid)
+        store.selectedTv = updated
+        store.rememberTv(updated)
+        selectedTv.value = updated
+        savedTvs.clear(); savedTvs.addAll(store.savedTvs)
+    }
+
+    fun onLocationGranted() {
+        if (connected.value) recordWifi()
+    }
+
+    fun dismissWifiMismatch() { wifiMismatch.value = null }
+
     init {
+        runCatching {
+            app.getSystemService(android.net.ConnectivityManager::class.java)
+                ?.registerDefaultNetworkCallback(networkCallback)
+        }
         // TVs paired before the saved list existed: keep the current one in it.
         selectedTv.value?.let { tv ->
             if (savedTvs.none { it.tv.ip == tv.ip }) {
@@ -101,8 +155,15 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Power/connect steps ending in "…" are progress (shown under the TV name); the rest are results. */
     private fun onSessionStatus(msg: String) {
-        if (msg.endsWith("…")) activity.value = msg else setStatus(msg)
+        when {
+            msg.endsWith("…") -> activity.value = msg
+            // Waking failed or isn't set up yet: show the simple steps instead of an error.
+            msg.startsWith("La TV no respondió") || msg.startsWith("Conecta la TV encendida una vez") -> wolGuide.value = true
+            else -> setStatus(msg)
+        }
     }
+
+    fun showWolGuide(show: Boolean) { wolGuide.value = show }
 
     private fun onConnection(up: Boolean) {
         val wasConnected = connected.value
@@ -115,6 +176,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 store.rememberTv(tv)
                 savedTvs.clear(); savedTvs.addAll(store.savedTvs)
             }
+            wifiMismatch.value = null
+            recordWifi()
             remote.requestInstalledApps()
         } else if (wasConnected && !userDisconnected) {
             if (canWake()) {
@@ -193,6 +256,14 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         // Persist the discovered MAC even when the selected TV keeps the same IP.
         store.selectedTv = enrichedTv
         selectedTv.value = enrichedTv
+        // On another Wi-Fi the TV can't be reached: say so instead of failing.
+        wifiCheck(enrichedTv)?.let { mismatch ->
+            wifiMismatch.value = mismatch
+            connecting.value = false
+            activity.value = null
+            return
+        }
+        wifiMismatch.value = null
         connecting.value = true
         activity.value = "Conectando a ${enrichedTv.displayName}…"
         viewModelScope.launch {
@@ -273,6 +344,8 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun power() {
         if (remote.isConnected()) { log("Conectado: envío KEY_POWER"); remote.sendKey("KEY_POWER"); return }
+        // Wake-on-LAN only works on the TV's own network.
+        selectedTv.value?.let { tv -> wifiCheck(tv)?.let { wifiMismatch.value = it; return } }
         powerJob { session.power() }
     }
 
@@ -356,6 +429,10 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        runCatching {
+            getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+                ?.unregisterNetworkCallback(networkCallback)
+        }
         remote.close()
         super.onCleared()
     }

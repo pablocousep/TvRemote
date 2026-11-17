@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Only to read the Wi-Fi name (Android hides it without location) and remember each TV's network. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- Screen mirroring: Samsung Smart View and the Miracast settings screen (Android 11+ visibility). -->
     <queries>
         <package android:name="com.samsung.android.smartmirroring"/>

@@ -3,6 +3,7 @@ package com.reelog.tvremote
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -55,7 +56,7 @@ class ScreenshotTest {
         show(RemoteUiState(
             connected = true, selectedTv = tv,
             savedTvs = listOf(
-                SavedTv(tv.copy(label = "Tele salón"), System.currentTimeMillis() - 3_600_000),
+                SavedTv(tv.copy(label = "Tele salón", ssid = "Casa_5G"), System.currentTimeMillis() - 3_600_000),
                 SavedTv(SamsungTv("192.168.1.40", "Samsung Q60", "QE43Q60", label = "Tele dormitorio"), System.currentTimeMillis() - 90_000_000)
             ),
             tvs = listOf(SamsungTv("192.168.1.31", "Samsung The Frame", "QE55LS03BAUXXC"))
@@ -67,6 +68,18 @@ class ScreenshotTest {
     @Test fun nameDialogAndActivity() {
         show(RemoteUiState(selectedTv = tv.copy(label = "Tele salón"), connecting = true, activity = "Conectando a Tele salón…"))
         shot("08-connecting")
+    }
+
+    @Test fun wifiMismatch() {
+        val salon = tv.copy(label = "Tele salón", ssid = "Casa_5G")
+        show(RemoteUiState(selectedTv = salon, wifiMismatch = WifiMismatch(salon, "Casa_5G", "Oficina")))
+        shot("09-wifi")
+    }
+
+    @Test fun wolGuide() {
+        show(RemoteUiState(selectedTv = tv, wolGuide = true))
+        rule.waitForIdle()
+        rule.onNode(isDialog()).captureRoboImage("$dir/10-wol-guide.png")
     }
 
     @Test fun lightTheme() {

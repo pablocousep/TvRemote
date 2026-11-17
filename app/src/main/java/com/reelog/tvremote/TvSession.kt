@@ -20,14 +20,15 @@ class TvStore(context: Context) {
                 tvPrefs.getString("name", "Samsung Smart TV") ?: "Samsung Smart TV",
                 tvPrefs.getString("model", "") ?: "",
                 tvPrefs.getString("mac", null),
-                tvPrefs.getString("label", null)
+                tvPrefs.getString("label", null),
+                tvPrefs.getString("ssid", null)
             )
         }
         set(tv) {
             if (tv == null) tvPrefs.edit().clear().apply()
             else tvPrefs.edit().putString("ip", tv.ip).putString("name", tv.name)
                 .putString("model", tv.model).putString("mac", tv.macAddress)
-                .putString("label", tv.label).apply()
+                .putString("label", tv.label).putString("ssid", tv.ssid).apply()
         }
 
     var haptics: Boolean
@@ -68,7 +69,8 @@ class TvStore(context: Context) {
                         SamsungTv(
                             o.getString("ip"), o.optString("name", "Samsung Smart TV"), o.optString("model", ""),
                             o.optString("mac").takeIf { it.isNotBlank() },
-                            o.optString("label").takeIf { it.isNotBlank() }
+                            o.optString("label").takeIf { it.isNotBlank() },
+                            o.optString("ssid").takeIf { it.isNotBlank() }
                         ),
                         o.optLong("last")
                     )
@@ -80,7 +82,10 @@ class TvStore(context: Context) {
     fun rememberTv(tv: SamsungTv, connectedAt: Long = System.currentTimeMillis()) {
         val existing = savedTvs.firstOrNull { sameTv(it.tv, tv) }
         // Keep the user's note when the TV comes back from discovery without one.
-        val merged = if (tv.label == null) tv.copy(label = existing?.tv?.label) else tv
+        val merged = tv.copy(
+            label = tv.label ?: existing?.tv?.label,
+            ssid = tv.ssid ?: existing?.tv?.ssid
+        )
         val others = savedTvs.filterNot { sameTv(it.tv, tv) }
         writeSaved(listOf(SavedTv(merged, connectedAt)) + others)
     }
@@ -100,7 +105,7 @@ class TvStore(context: Context) {
     private fun writeSaved(list: List<SavedTv>) {
         val arr = JSONArray(list.sortedByDescending { it.lastConnected }.take(20).map {
             JSONObject().put("ip", it.tv.ip).put("name", it.tv.name).put("model", it.tv.model)
-                .put("mac", it.tv.macAddress ?: "").put("label", it.tv.label ?: "")
+                .put("mac", it.tv.macAddress ?: "").put("label", it.tv.label ?: "").put("ssid", it.tv.ssid ?: "")
                 .put("last", it.lastConnected)
         })
         prefs.edit().putString("saved_tvs", arr.toString()).apply()
@@ -184,7 +189,7 @@ class TvSession(
         }
         // Only carry the token and certificate pin over when the MAC proves it is the same TV.
         if (byMac != null) remote.migratePairing(tv.ip, match.ip)
-        val updated = match.copy(macAddress = match.macAddress ?: tv.macAddress, label = tv.label)
+        val updated = match.copy(macAddress = match.macAddress ?: tv.macAddress, label = tv.label, ssid = tv.ssid)
         store.selectedTv = updated
         onTvChanged(updated)
         log("TV encontrada en su nueva IP ${match.ip}")
