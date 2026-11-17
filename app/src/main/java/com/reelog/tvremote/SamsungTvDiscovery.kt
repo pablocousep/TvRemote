@@ -39,26 +39,30 @@ data class SamsungTv(
 
 class SamsungTvDiscovery(private val context: Context) {
     suspend fun discover(): List<SamsungTv> = withContext(Dispatchers.IO) {
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivity.activeNetwork
         val candidates = linkedSetOf<String>()
-        candidates += discoverSsdp()
+        candidates += discoverSsdp(network)
         candidates += localSubnetHosts()
         val semaphore = Semaphore(48)
         coroutineScope {
             candidates.map { ip ->
                 async(Dispatchers.IO) {
-                    semaphore.withPermit { probeSamsungTv(ip) }
+                    semaphore.withPermit { probeSamsungTv(ip, network) }
                 }
             }.awaitAll().filterNotNull().distinctBy { it.ip }.sortedBy { it.name.lowercase() }
         }
     }
 
-    private fun discoverSsdp(): Set<String> {
+    private fun discoverSsdp(network: android.net.Network?): Set<String> {
         val found = linkedSetOf<String>()
         var multicastLock: WifiManager.MulticastLock? = null
         try {
             val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             multicastLock = wifi.createMulticastLock("reeltv-ssdp").apply { setReferenceCounted(false); acquire() }
-            DatagramSocket().use { socket ->
+            DatagramSocket(null).use { socket ->
+                network?.bindSocket(socket)
+                socket.bind(null)
                 socket.soTimeout = 1_300
                 socket.broadcast = true
                 val targets = listOf(
@@ -148,9 +152,10 @@ class SamsungTvDiscovery(private val context: Context) {
         return result
     }
 
-    private fun probeSamsungTv(ip: String): SamsungTv? {
+    private fun probeSamsungTv(ip: String, network: android.net.Network?): SamsungTv? {
         return try {
-            val connection = (URL("http://$ip:8001/api/v2/").openConnection() as java.net.HttpURLConnection).apply {
+            val url = URL("http://$ip:8001/api/v2/")
+            val connection = ((network?.openConnection(url) ?: url.openConnection()) as java.net.HttpURLConnection).apply {
                 connectTimeout = 450
                 readTimeout = 450
                 requestMethod = "GET"
