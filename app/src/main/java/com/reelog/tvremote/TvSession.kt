@@ -170,11 +170,11 @@ class TvSession(
     /** Connects to [tv]; if it does not answer, looks for it at a new IP (DHCP change). */
     suspend fun connect(tv: SamsungTv, relocate: Boolean = true): Boolean {
         remote.connect(tv.ip)
-        if (awaitConnected(7_000)) return true
+        if (awaitConnected(30_000)) return true
         if (!relocate) return false
         val moved = relocate(tv) ?: return false
         remote.connect(moved.ip)
-        return awaitConnected(7_000)
+        return awaitConnected(30_000)
     }
 
     /** Finds the same TV (by MAC, else by name + model) after its IP changed. */
