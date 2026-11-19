@@ -1,5 +1,7 @@
 # TvRemote — Samsung Smart TV
 
+**TVRemote es un producto de [TosyLabs](https://tosylabs.com/).** Consulta la [ficha oficial de TVRemote](https://tosylabs.com/products/tvremote/).
+
 Aplicación Android en Kotlin + Jetpack Compose para controlar televisores Samsung compatibles desde la red local.
 
 ## Compilación automática
